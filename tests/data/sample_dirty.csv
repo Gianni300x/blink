@@ -1,0 +1,14 @@
+record_id,name,age,income,joined_at,country,notes
+usr_001,Ana,28,42000,2025-01-10,AR,ok
+usr_002,Bruno,31,45000,2025-01-11,AR,
+usr_003,Carla,,43000,2025-01-12,AR,missing age
+usr_004,Diego,29,44000,2025-01-13,AR,ok
+usr_005,Elena,error,46000,2025-01-14,AR,broken age
+usr_006,Fede,32,N/A,2025-01-15,AR,broken income
+usr_007,Gabi,27,41000,not-a-date,AR,broken date
+usr_008,Hugo,30,9999999,2025-01-17,AR,extreme income
+usr_009,Ines,33,47000,2025-01-18,AR,ok
+usr_010,Juan,28,42500,2025-01-19,AR,ok
+usr_011,,29,43500,2025-01-20,AR,missing name
+usr_012,Luz,31,45500,2025-01-21,AR,ok
+usr_004,Diego,29,44000,2025-01-13,AR,ok
