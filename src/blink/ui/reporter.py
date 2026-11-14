@@ -95,13 +95,40 @@ def show_comparison(
     summary.append(str(baseline))
     summary.append(f"\nFilas: {report.baseline_rows:,} → {report.current_rows:,}")
     summary.append(f" · Columnas: {report.baseline_columns:,} → {report.current_columns:,}")
-    summary.append("\nCompara nombres y tipos de columnas; no evalúa cambios de valores.")
-    status = "REVISAR" if report.changes else "SIN CAMBIOS DE ESQUEMA"
+    summary.append("\nCompara esquema y valores agregados, sin emparejar filas.")
+    warnings = bool(report.changes) or any(metric.flagged for metric in report.drift)
+    status = "REVISAR" if warnings else "SIN CAMBIOS DE ESQUEMA"
     output.print(Panel(summary, title=f"Comparación · {status}",
-                       border_style="yellow" if report.changes else "cyan"))
+                       border_style="yellow" if warnings else "cyan"))
     labels = {"added": "AGREGADA", "removed": "ELIMINADA", "type_changed": "CAMBIO DE TIPO"}
     for change in report.changes:
         line = Text(f"AVISO · {labels[change.kind]} · ", style="yellow")
         line.append(change.column, style="bold")
         line.append(f": {change.previous_type or 'ausente'} → {change.current_type or 'ausente'}")
+        output.print(line)
+    if not report.changes:
+        output.print("Sin cambios de nombres o tipos de columnas.")
+    if not report.drift:
+        output.print("Distribuciones: sin columnas comunes para comparar.")
+        return
+    output.print(Text("\nCambios de valores · exactos sobre observaciones elegibles", style="bold"))
+    methods = {"mean_shift": "CAMBIO DE MEDIA (σ anterior)", "ks": "DISTRIBUCIÓN KS",
+               "total_variation": "DISTRIBUCIÓN DE CATEGORÍAS", "missing_rate": "FALTANTES",
+               "distribution": "DISTRIBUCIÓN"}
+    for metric in report.drift:
+        status = "OMITIDO" if metric.reason else "AVISO" if metric.flagged else "INFO"
+        line = Text(f"{status} · {methods[metric.method]} · ",
+                    style="yellow" if metric.flagged else "dim" if metric.reason else "cyan")
+        line.append(metric.column, style="bold")
+        if metric.reason:
+            line.append(f": {metric.reason}")
+        else:
+            factor = 100 if metric.method == "missing_rate" else 1
+            unit = " pp" if metric.method == "missing_rate" else ""
+            line.append(f": {metric.score * factor:.6g}{unit} · umbral ≥{metric.threshold * factor:g}{unit}")
+            if metric.baseline_value is not None and metric.current_value is not None:
+                unit = "%" if metric.method == "missing_rate" else ""
+                line.append(f" · {metric.baseline_value * factor:.6g}{unit} → {metric.current_value * factor:.6g}{unit}")
+        line.append(f"\nElegibles: anterior {metric.baseline_eligible:,}/{metric.baseline_rows:,}"
+                    f" · actual {metric.current_eligible:,}/{metric.current_rows:,}")
         output.print(line)

@@ -36,7 +36,7 @@ def main(
         Path | None,
         typer.Option(
             "--baseline", exists=True, file_okay=True, dir_okay=False, readable=True,
-            metavar="FILE", help="Comparar columnas y tipos con un archivo anterior CSV o Parquet.",
+            metavar="FILE", help="Comparar columnas, tipos y distribuciones con un CSV o Parquet anterior.",
         ),
     ] = None,
 ) -> None:

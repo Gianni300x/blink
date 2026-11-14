@@ -1,6 +1,7 @@
 """Resultados de inspección independientes de la terminal y del almacenamiento."""
 
 from dataclasses import dataclass
+import math
 from typing import Literal
 
 
@@ -60,9 +61,31 @@ class SchemaChange:
 
 
 @dataclass(frozen=True)
+class DriftMetric:
+    column: str
+    method: str
+    baseline_rows: int
+    current_rows: int
+    baseline_eligible: int
+    current_eligible: int
+    score: float | None
+    threshold: float | None
+    reason: str | None = None
+    baseline_value: float | None = None
+    current_value: float | None = None
+
+    @property
+    def flagged(self) -> bool:
+        return (self.score is not None and self.threshold is not None
+                and (self.score >= self.threshold
+                     or math.isclose(self.score, self.threshold, rel_tol=0, abs_tol=1e-12)))
+
+
+@dataclass(frozen=True)
 class ComparisonReport:
     baseline_rows: int
     current_rows: int
     baseline_columns: int
     current_columns: int
     changes: tuple[SchemaChange, ...]
+    drift: tuple[DriftMetric, ...] = ()

@@ -1,8 +1,9 @@
-"""Comparación de esquemas por nombre; sin lectura, UI ni conversión de datos."""
+"""Comparación de esquemas y agregados; sin lectura ni presentación."""
 
 import polars as pl
 
 from blink.core.models import ComparisonReport, SchemaChange
+from blink.core.drift import detect_drift
 
 
 def compare(current: pl.DataFrame, baseline: pl.DataFrame) -> ComparisonReport:
@@ -20,4 +21,5 @@ def compare(current: pl.DataFrame, baseline: pl.DataFrame) -> ComparisonReport:
             changes.append(SchemaChange(name, "removed", str(dtype), None))
     return ComparisonReport(
         baseline.height, current.height, baseline.width, current.width, tuple(changes),
+        detect_drift(current, baseline),
     )

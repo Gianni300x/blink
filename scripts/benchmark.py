@@ -19,6 +19,7 @@ import polars as pl
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ml", action="store_true", help="Medir también el costo de IsolationForest.")
+    parser.add_argument("--baseline", action="store_true", help="Medir comparación con amount desplazado +500.")
     args = parser.parse_args()
     # La generación de datos queda fuera del tiempo de ejecución de blink.
     count = 100_000
@@ -34,15 +35,23 @@ def main() -> None:
         results = {}
         for suffix in ("csv", "parquet"):
             path = Path(directory) / f"data.{suffix}"
+            current_frame = frame.with_columns(pl.col("amount") + 500) if args.baseline else frame
             if suffix == "csv":
-                frame.write_csv(path)
+                current_frame.write_csv(path)
             else:
-                frame.write_parquet(path)
+                current_frame.write_parquet(path)
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            baseline = Path(directory) / f"baseline.{suffix}"
+            baseline_digest = None
+            if args.baseline:
+                getattr(frame, f"write_{suffix}")(baseline)
+                baseline_digest = hashlib.sha256(baseline.read_bytes()).hexdigest()
             timings = []
             command = [sys.executable, "-m", "blink.cli", str(path)]
             if args.ml:
                 command.append("--ml")
+            if args.baseline:
+                command.extend(["--baseline", str(baseline)])
             for _ in range(7):
                 start = perf_counter()
                 result = subprocess.run(
@@ -52,7 +61,6 @@ def main() -> None:
                 timings.append(perf_counter() - start)
                 if result.returncode:
                     raise RuntimeError(result.stderr.decode(errors="replace"))
-            assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
             # Proceso adicional fuera de los tiempos: RSS máximo del propio
             # proceso, no acumulado en el padre ni de otros proyectos.
             memory_code = (
@@ -70,8 +78,12 @@ def main() -> None:
             )
             max_rss = json.loads(memory.stderr.decode().splitlines()[-1])["max_rss"]
             rss_bytes = max_rss if sys.platform == "darwin" else max_rss * 1024
+            assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+            if args.baseline:
+                assert hashlib.sha256(baseline.read_bytes()).hexdigest() == baseline_digest
             results[suffix] = {
                 "bytes": path.stat().st_size,
+                "baseline_bytes": baseline.stat().st_size if args.baseline else None,
                 "seconds": timings,
                 "first_seconds": timings[0],
                 "median_seconds": statistics.median(timings),
@@ -87,6 +99,7 @@ def main() -> None:
             "logical_cpus": os.cpu_count(),
             "versions": {name: importlib.metadata.version(name) for name in ("polars", "typer", "rich", "numpy", "scikit-learn")},
             "ml_enabled": args.ml,
+            "baseline_enabled": args.baseline,
             "rows": count, "columns": frame.width,
             "protocol": "7 fresh processes per format; includes startup, read, analysis and Rich output capture; OS cache not flushed; generation excluded",
             "results": results,
