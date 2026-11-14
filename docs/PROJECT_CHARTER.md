@@ -1,6 +1,6 @@
 # Fronteras del proyecto
 
-Estado: fronteras vigentes para la implementación autorizada del Hito 1. Este documento define el alcance
+Estado: fronteras vigentes para los Hitos 1 y 2. Este documento define el alcance
 de `blink`; el [roadmap](ROADMAP.md) determina el orden de implementación.
 
 ## Qué ES blink

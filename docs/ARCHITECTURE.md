@@ -1,8 +1,7 @@
 # Arquitectura modular
 
-Estado: arquitectura aplicada al Hito 1. Lectura, análisis y presentación están
-implementados y verificados en Python 3.12.13. Los detectores del
-Hito 2 siguen reservados, sin implementación.
+Estado: arquitectura aplicada a los Hitos 1 y 2. Lectura, análisis, detectores y
+presentación están implementados y verificados en Python 3.12.13.
 
 ## Estructura
 
@@ -72,7 +71,13 @@ sin traceback ni volcado de valores de celdas y terminan con código 2.
 `LoadedDataset` (en `io/loader.py`) agrupa DataFrame, formato y política de lectura.
 `AnalysisReport`, `ColumnMetrics` y `Finding` son dataclasses inmutables en
 `core/models.py`; no dependen de Polars ni Rich. Cobertura exacta y códigos estables
-identifican hallazgos. Aún no se incluyen contratos de detectores o serialización.
+identifican hallazgos. `DetectorResult` agrega método, columnas, filas totales,
+elegibles y evaluadas, conteo opcional, parámetros y motivo de omisión. Un conteo
+`None` significa análisis omitido; cero significa ejecutado sin indicios.
+`AnalysisReport.detectors` reúne esos resultados; los hallazgos conservan códigos
+estables (`numeric_outliers`, `broken_type`, `isolation_outliers`). La evidencia
+numérica del Hito 2 vive en los resultados de detector, sin valores de celdas.
+La serialización queda para el Hito 3.
 Los porcentajes sin denominador se representan con `None`, mostrado como `n/d`.
 
 ## Datos y rendimiento
@@ -82,6 +87,12 @@ todos los registros; no se muestrean silenciosamente. No se incorpora pandas.
 NumPy se usa para operaciones numéricas puntuales y la frontera con scikit-learn.
 Las importaciones de ML se difieren hasta ejecutar el detector para reducir el
 costo del arranque y del análisis básico.
+`analyze(frame, ml=False)` ejecuta IQR y tipos rotos; `ml=True`, coordinado por
+`--ml`, habilita IsolationForest. Este opt-in conserva el arranque ligero; el
+detector desactivado queda registrado como omitido. NumPy solo materializa hasta
+10.000 × 32 valores, después del filtrado y muestreo en Polars. La tabla filtrada
+en Polars sí puede cubrir todas las filas; el archivo debe entrar en memoria.
+Política completa de umbrales, exclusiones y límites en el README.
 
 La lectura debe preservar evidencia de tipos rotos. No se usará `ignore_errors`
 ni una conversión a nulos que esconda valores incompatibles. Las convenciones de
@@ -108,14 +119,20 @@ y [validación de rutas de Typer](https://typer.tiangolo.com/tutorial/parameter-
 
 ## Verificación ejecutada
 
-36 pruebas pasan en Python 3.12.13 con Polars 1.44.2. Cubren los cálculos de salud,
+61 pruebas pasan con warnings tratados como errores en Python 3.12.13 con Polars 1.44.2. Cubren los cálculos de salud,
 los límites de la heurística de IDs, nulos/NaN, duplicados excedentes, datasets vacíos,
 lectura CSV/Parquet, evidencia de valores basura, errores de entrada, conservación
 de archivos, CLI y UI en 40/80/120 columnas sin color. La invocación instalada
 `blink tests/data/sample_dirty.csv` también se verificó.
+Los detectores agregan fixtures deterministas de IQR y tipos rotos, umbrales,
+fechas imposibles y ambiguas, IDs con ceros iniciales, IQR cero, no finitos,
+overflow, omisiones ML, reproducibilidad, límite de filas/columnas, equivalencia
+CSV/Parquet y conservación de archivos con `--ml`. Un subproceso verifica que
+el análisis habitual no importe NumPy ni sklearn.
 
-El benchmark sobre 100.000 filas y seis columnas pasó el umbral de <1 s en las
-siete ejecuciones de ambos formatos. Protocolo, entorno y resultados completos
+El benchmark del Hito 2 sobre 100.000 filas y seis columnas pasó el umbral de <1 s
+en las siete ejecuciones de ambos formatos sin ML; con ML hubo ejecuciones por
+encima del objetivo. Se compara tiempo y RSS con el MVP. Protocolo y resultados
 en [BENCHMARK.md](BENCHMARK.md); script en `scripts/benchmark.py`.
 La compatibilidad sintáctica con Python 3.11 se revisó con AST; no se ejecutó una
 matriz de versiones de Python ni una revisión de todos los tipos Parquet posibles.

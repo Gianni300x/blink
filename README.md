@@ -9,19 +9,23 @@ y Rich. Licencia [MIT](LICENSE).
 
 ## Estado actual
 
-Hito 1 implementado y verificado con 36 pruebas en Python 3.12.13. `blink`
+Hitos 1 y 2 implementados y verificados con 61 pruebas en Python 3.12.13. `blink`
 lee CSV/Parquet y muestra dimensiones, tipos, nulos, NaN, duplicados excedentes,
-columnas constantes y posibles IDs de texto. No modifica el archivo original.
+columnas constantes y posibles IDs de texto, además de outliers IQR y posibles
+tipos rotos. IsolationForest se habilita con `--ml`. No modifica el archivo original.
 
 ```console
 blink datos.csv
 blink datos.parquet
+blink datos.csv --ml
 ```
 
 El [benchmark reproducible](docs/BENCHMARK.md) de 100.000 filas y seis columnas
-terminó en menos de un segundo en las siete ejecuciones de cada formato, incluyendo
-arranque, lectura, análisis y renderizado. Es una medición local, no una garantía
-para cualquier archivo o equipo. Python 3.11 es el mínimo declarado; las pruebas
+terminó en menos de un segundo en las siete ejecuciones de cada formato sin ML,
+incluyendo arranque, lectura, análisis y renderizado. Con `--ml`, algunas ejecuciones
+superaron un segundo; se documentan tiempos y memoria frente al MVP.
+Es una medición local, no una garantía para cualquier archivo o equipo.
+Python 3.11 es el mínimo declarado; las pruebas
 se ejecutaron en 3.12, no en una matriz de versiones.
 
 ## Instalación desde el repositorio
@@ -65,7 +69,7 @@ En Windows, activá el entorno con `.venv\Scripts\Activate.ps1` en PowerShell.
   proporción únicos/observados ≥95 %. Es informativo: nombres y texto libre también
   pueden cumplir la regla. No demuestra una clave primaria ni exige ausencia de nulos.
 
-Las métricas cubren el archivo completo, sin muestreo. Nulos, NaN, duplicados,
+Las métricas de salud cubren el archivo completo, sin muestreo. Nulos, NaN, duplicados,
 constantes y datasets vacíos generan avisos; posibles IDs generan información.
 Los avisos no cambian el código de salida: 0 indica inspección completada y 2 un
 error de uso/lectura/análisis. Un archivo vacío sin cabecera es un error; una
@@ -89,9 +93,45 @@ El archivo debe entrar en memoria; el MVP no es un motor de streaming.
 La salida se adapta a terminales estrechas y mantiene etiquetas legibles sin color.
 Para desactivar color explícitamente: `NO_COLOR=1 blink datos.csv` (macOS/Linux).
 
+### Anomalías y tipos rotos (Hito 2)
+
+- **IQR:** enteros y flotantes, al menos 10 valores finitos. Cuartiles lineales;
+  valores estrictamente fuera de `[Q1 − 1.5 × IQR, Q3 + 1.5 × IQR]` son indicios.
+  Excluye null, NaN e infinitos; informa filas totales, elegibles y evaluadas,
+  conteo y cotas. IQR cero (incluidas constantes) o cotas no representables
+  omiten el análisis con motivo; no se usa un fallback de MAD.
+- **Tipos rotos:** al menos 10 textos no vacíos después de quitar espacios para
+  el diagnóstico. Si ≥90 % son números finitos o fechas ISO `YYYY-MM-DD` válidas,
+  informa los incompatibles. Null y textos vacíos no participan. `N/A`, `error`,
+  fechas imposibles y texto no finito sí cuentan como incompatibles. No cambia
+  los valores ni el esquema. Fechas con barras, timestamps y formatos locales
+  quedan fuera; no se adivina día/mes. Códigos numéricos con ceros iniciales
+  omiten la candidatura numérica para reducir falsos positivos de IDs.
+- **IsolationForest (`--ml`):** numéricas variables con ≥10 valores finitos por
+  columna; requiere ≥32 filas completas y finitas en esas columnas, sin imputación.
+  Más de 32 columnas elegibles omite el detector completo. Hasta 10.000 filas se
+  evalúan completas; por encima se toma una muestra uniforme sin reemplazo,
+  semilla 42. Entrena y evalúa únicamente esas filas: no extrapola el conteo.
+  Usa 64 árboles, `max_samples=min(256, filas evaluadas)`, `contamination='auto'`,
+  `random_state=42`, `n_jobs=1`; decisión `<0` indica anomalía.
+  Se escala cada columna de la muestra por `max(abs máximo, 1)` antes del
+  float32 interno; si toda la variación desaparece, se omite con motivo.
+  Solo la muestra pasa a NumPy; NumPy y sklearn no se importan en el análisis habitual.
+
+IQR y ML omiten posibles IDs enteros llamados `id` o terminados en `_id` con
+≥95 % de unicidad entre los finitos. Otros IDs pueden generar falsos positivos;
+la regla tampoco demuestra que una columna sea un ID. Booleanos, decimales y
+tipos temporales nativos no se usan como variables numéricas en estos detectores.
+
+Cada detector muestra su cobertura y los motivos de omisión. Un conteo cero se
+distingue de un análisis omitido. Estas heurísticas señalan casos para revisar;
+no prueban errores de negocio. IsolationForest con contaminación automática
+puede marcar una proporción considerable incluso en datos válidos.
+Los avisos de anomalías conservan el código de salida 0.
+
 ## Qué viene después
 
-Hito 2: anomalías numéricas y tipos rotos. Hito 3: comparación con baseline y CI.
+Hito 3: comparación con baseline y CI.
 Los flags `--baseline`, `--json` y `--exit-code` todavía no están disponibles.
 
 ## Desarrollo y alcance

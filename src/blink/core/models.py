@@ -26,6 +26,18 @@ class ColumnMetrics:
 
 
 @dataclass(frozen=True)
+class DetectorResult:
+    method: str
+    columns: tuple[str, ...]
+    total_rows: int
+    eligible_rows: int
+    evaluated_rows: int
+    count: int | None
+    parameters: tuple[tuple[str, str], ...] = ()
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class AnalysisReport:
     rows: int
     columns: tuple[ColumnMetrics, ...]
@@ -36,3 +48,4 @@ class AnalysisReport:
     duplicate_percent: float | None
     findings: tuple[Finding, ...]
     coverage: str = "exacta · todas las filas"
+    detectors: tuple[DetectorResult, ...] = ()

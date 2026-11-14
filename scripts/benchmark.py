@@ -1,5 +1,6 @@
 """Benchmark de proceso completo. Uso: uv run python scripts/benchmark.py."""
 
+import argparse
 import hashlib
 import importlib.metadata
 import json
@@ -16,6 +17,9 @@ import polars as pl
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ml", action="store_true", help="Medir también el costo de IsolationForest.")
+    args = parser.parse_args()
     # La generación de datos queda fuera del tiempo de ejecución de blink.
     count = 100_000
     with TemporaryDirectory(prefix="blink-benchmark-") as directory:
@@ -36,16 +40,36 @@ def main() -> None:
                 frame.write_parquet(path)
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             timings = []
+            command = [sys.executable, "-m", "blink.cli", str(path)]
+            if args.ml:
+                command.append("--ml")
             for _ in range(7):
                 start = perf_counter()
                 result = subprocess.run(
-                    [sys.executable, "-m", "blink.cli", str(path)],
+                    command,
                     capture_output=True, env=dict(os.environ, COLUMNS="80", NO_COLOR="1"),
                 )
                 timings.append(perf_counter() - start)
                 if result.returncode:
                     raise RuntimeError(result.stderr.decode(errors="replace"))
             assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+            # Proceso adicional fuera de los tiempos: RSS máximo del propio
+            # proceso, no acumulado en el padre ni de otros proyectos.
+            memory_code = (
+                "import resource, runpy, sys, json; "
+                "sys.argv = ['blink', *sys.argv[1:]]; "
+                "\ntry: runpy.run_module('blink.cli', run_name='__main__')"
+                "\nexcept SystemExit as exc:"
+                "\n if exc.code not in (None, 0): raise"
+                "\nprint(json.dumps({'max_rss': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}), file=sys.stderr)"
+            )
+            memory = subprocess.run(
+                [sys.executable, "-c", memory_code, *command[3:]],
+                capture_output=True, check=True,
+                env=dict(os.environ, COLUMNS="80", NO_COLOR="1"),
+            )
+            max_rss = json.loads(memory.stderr.decode().splitlines()[-1])["max_rss"]
+            rss_bytes = max_rss if sys.platform == "darwin" else max_rss * 1024
             results[suffix] = {
                 "bytes": path.stat().st_size,
                 "seconds": timings,
@@ -53,6 +77,7 @@ def main() -> None:
                 "median_seconds": statistics.median(timings),
                 "max_seconds": max(timings),
                 "all_under_one_second": max(timings) < 1,
+                "peak_rss_bytes_extra_process": rss_bytes,
             }
         print(json.dumps({
             "python": sys.version,
@@ -60,7 +85,8 @@ def main() -> None:
             "machine": platform.machine(),
             "processor": platform.processor(),
             "logical_cpus": os.cpu_count(),
-            "versions": {name: importlib.metadata.version(name) for name in ("polars", "typer", "rich")},
+            "versions": {name: importlib.metadata.version(name) for name in ("polars", "typer", "rich", "numpy", "scikit-learn")},
+            "ml_enabled": args.ml,
             "rows": count, "columns": frame.width,
             "protocol": "7 fresh processes per format; includes startup, read, analysis and Rich output capture; OS cache not flushed; generation excluded",
             "results": results,

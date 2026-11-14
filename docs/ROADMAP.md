@@ -1,8 +1,9 @@
 # Hoja de ruta
 
-Estado: **Hito 1 completado y verificado** el 2026-11-13: 36 pruebas pasan y
-benchmark de 100.000 filas bajo 1 s en CSV y Parquet (7/7 por formato).
-Hitos 2 y 3 sin iniciar. Evidencia y límites en [BENCHMARK.md](BENCHMARK.md).
+Estado: **Hitos 1 y 2 completados y verificados**, Hito 2 el 2026-11-14:
+61 pruebas pasan con warnings como errores. Benchmark de 100.000 filas bajo 1 s
+en CSV y Parquet sin ML (7/7 por formato); con `--ml` hubo ejecuciones >1 s.
+Hito 3 sin iniciar. Evidencia y límites en [BENCHMARK.md](BENCHMARK.md).
 
 ## Hito 1 — MVP: salud básica y UX en terminal
 
@@ -32,26 +33,26 @@ Hitos 2 y 3 sin iniciar. Evidencia y límites en [BENCHMARK.md](BENCHMARK.md).
 
 ### Entregables
 
-- [ ] Detectar outliers numéricos con IQR y/o Z-score modificado, con política documentada.
-- [ ] Incorporar IsolationForest ligero, reproducible y con trabajo acotado.
-- [ ] Detectar tipos rotos: columnas de texto mayormente numéricas o fechas que
+- [x] Detectar outliers numéricos con IQR y/o Z-score modificado, con política documentada.
+- [x] Incorporar IsolationForest ligero, reproducible y con trabajo acotado.
+- [x] Detectar tipos rotos: columnas de texto mayormente numéricas o fechas que
   contienen valores incompatibles como `N/A` o `error`.
-- [ ] Mostrar método, cobertura, conteos y umbrales para interpretar cada alerta.
+- [x] Mostrar método, cobertura, conteos y umbrales para interpretar cada alerta.
 
 ### Definition of Done
 
-- [ ] Fixtures deterministas verifican outliers conocidos y tipos rotos numéricos/de fecha.
-- [ ] Constantes, MAD/IQR cero, nulos, NaN, infinitos y muestras insuficientes se
+- [x] Fixtures deterministas verifican outliers conocidos y tipos rotos numéricos/de fecha.
+- [x] Constantes, MAD/IQR cero, nulos, NaN, infinitos y muestras insuficientes se
   manejan explícitamente; los detectores omitidos indican la razón.
-- [ ] Los valores basura siguen disponibles para el diagnóstico: no se descartan
+- [x] Los valores basura siguen disponibles para el diagnóstico: no se descartan
   silenciosamente durante la inferencia o el parseo de lectura.
-- [ ] Semilla, tamaño de muestra, límite de filas y parámetros de IsolationForest
+- [x] Semilla, tamaño de muestra, límite de filas y parámetros de IsolationForest
   quedan documentados; se informa si el resultado cubre solo una muestra.
-- [ ] Se revisan falsos positivos en IDs y fechas ambiguas; no se alteran los datos
+- [x] Se revisan falsos positivos en IDs y fechas ambiguas; no se alteran los datos
   ni se afirma conocer la intención de negocio.
-- [ ] La conversión a NumPy se limita a lo necesario; se mide el impacto temporal
+- [x] La conversión a NumPy se limita a lo necesario; se mide el impacto temporal
   y de memoria respecto del MVP, sin cargar scikit-learn al arrancar la CLI básica.
-- [ ] Pytest pasa y la documentación explica los límites de los métodos.
+- [x] Pytest pasa y la documentación explica los límites de los métodos.
 
 ## Hito 3 — Data drift y producción
 
@@ -91,4 +92,18 @@ Verificación ejecutada con `.venv/bin/python -m pytest -q` (36 passed),
 `.venv/bin/blink tests/data/sample_dirty.csv` y
 `.venv/bin/python scripts/benchmark.py`. La equivalencia CSV/Parquet, los casos
 límite, la conservación de bytes y el reporter sin color están cubiertos por tests.
-No se ejecutaron detectores de ML ni funciones de los hitos posteriores.
+Esta evidencia corresponde al Hito 1; la verificación posterior del Hito 2 se detalla abajo.
+
+## Decisiones y verificación del Hito 2
+
+La continuación del 2026-11-14 implementa IQR y tipos rotos por defecto, e
+IsolationForest opt-in con `--ml`. Los umbrales y omisiones están en README.md.
+Se elige IQR sin fallback a MAD; IQR cero se informa como omitido. Fechas: solo
+ISO de calendario. ML: semilla 42, hasta 10.000 filas y 32 columnas, sin imputar
+ni extrapolar los conteos de la muestra.
+
+Verificado con `.venv/bin/python -m pytest -q -W error` (61 passed), CLI instalada
+con `--ml`, benchmark con y sin ML, y referencia del MVP ejecutada desde una copia
+temporal de `93a72a9` con el mismo entorno. Se mide RSS máximo en un proceso
+adicional por caso, sin modificar el checkout ni los archivos de entrada.
+Python 3.11 sigue sin verificación de ejecución; no se afirma una matriz de versiones.

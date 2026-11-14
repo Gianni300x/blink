@@ -1,8 +1,9 @@
-"""Métricas exactas de salud básica; sin I/O, ML ni presentación."""
+"""Métricas exactas de salud y composición de detectores; sin I/O ni UI."""
 
 import polars as pl
 
 from blink.core.models import AnalysisReport, ColumnMetrics, Finding
+from blink.core.detectors import detect
 
 ID_MIN_VALUES = 10
 ID_UNIQUE_RATIO = 0.95
@@ -12,7 +13,7 @@ def _percent(count: int, total: int) -> float | None:
     return count * 100 / total if total else None
 
 
-def analyze(frame: pl.DataFrame) -> AnalysisReport:
+def analyze(frame: pl.DataFrame, *, ml: bool = False) -> AnalysisReport:
     rows, width = frame.shape
     findings: list[Finding] = []
     columns: list[ColumnMetrics] = []
@@ -80,8 +81,11 @@ def analyze(frame: pl.DataFrame) -> AnalysisReport:
             f"{duplicates:,} filas duplicadas excedentes ({duplicates / rows:.1%}).",
         ))
     null_count = sum(column.null_count for column in columns)
+    detectors, detected_findings = detect(frame, ml=ml)
+    findings.extend(detected_findings)
     return AnalysisReport(
         rows, tuple(columns), null_count, _percent(null_count, rows * width),
         sum(column.nan_count for column in columns), duplicates,
         _percent(duplicates, rows), tuple(findings),
+        detectors=detectors,
     )

@@ -30,15 +30,16 @@ def main(
             help="Ruta de un archivo CSV o Parquet local.",
         ),
     ],
+    ml: Annotated[bool, typer.Option("--ml", help="Ejecutar IsolationForest con muestra acotada y semilla fija.")] = False,
 ) -> None:
-    """Inspecciona nulos, duplicados, constantes y posibles IDs."""
+    """Inspecciona salud, outliers IQR y posibles tipos rotos; --ml habilita IsolationForest."""
     if file.suffix.lower() not in {".csv", ".parquet"}:
         raise typer.BadParameter(
             "Formato no soportado. Usá un archivo .csv o .parquet.", param_hint="FILE",
         )
     try:
         dataset = load_dataset(file)
-        report = analyze(dataset.frame)
+        report = analyze(dataset.frame, ml=ml)
     except LoadError as exc:
         Console(stderr=True).print(Text(f"Error: {exc}", style="red"))
         raise typer.Exit(2) from exc

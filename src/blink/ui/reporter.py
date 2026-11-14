@@ -68,4 +68,20 @@ def show_report(
             line.append(f": {item.message}")
             output.print(line)
     else:
-        output.print("Sin problemas detectados por las reglas básicas. No incluye análisis de anomalías.")
+        output.print("Sin hallazgos en las reglas ejecutadas. Revisá la cobertura y las omisiones.")
+
+    if report.detectors:
+        output.print(Text("\nDetectores · cobertura independiente de la salud básica", style="bold"))
+        for result in report.detectors:
+            line = Text(f"{result.method} · ", style="bold")
+            line.append(", ".join(result.columns) or "dataset")
+            if result.reason:
+                line.append(f"\nOMITIDO: {result.reason}")
+                line.append(f"\n0 evaluadas / {result.eligible_rows:,} elegibles / {result.total_rows:,} totales")
+            else:
+                scope = "muestra" if result.evaluated_rows < result.eligible_rows else "todas las elegibles"
+                line.append(f"\n{result.count:,} indicios · {result.evaluated_rows:,} evaluadas "
+                            f"/ {result.eligible_rows:,} elegibles / {result.total_rows:,} totales · {scope}")
+            if result.parameters:
+                line.append("\n" + " · ".join(f"{key}={value}" for key, value in result.parameters))
+            output.print(line)
