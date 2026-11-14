@@ -49,3 +49,20 @@ class AnalysisReport:
     findings: tuple[Finding, ...]
     coverage: str = "exacta · todas las filas"
     detectors: tuple[DetectorResult, ...] = ()
+
+
+@dataclass(frozen=True)
+class SchemaChange:
+    column: str
+    kind: Literal["added", "removed", "type_changed"]
+    previous_type: str | None
+    current_type: str | None
+
+
+@dataclass(frozen=True)
+class ComparisonReport:
+    baseline_rows: int
+    current_rows: int
+    baseline_columns: int
+    current_columns: int
+    changes: tuple[SchemaChange, ...]

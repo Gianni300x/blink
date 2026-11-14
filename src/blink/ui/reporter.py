@@ -7,7 +7,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from blink.core.models import AnalysisReport
+from blink.core.models import AnalysisReport, ComparisonReport
 
 
 def _percent(value: float | None) -> str:
@@ -85,3 +85,23 @@ def show_report(
             if result.parameters:
                 line.append("\n" + " · ".join(f"{key}={value}" for key, value in result.parameters))
             output.print(line)
+
+
+def show_comparison(
+    report: ComparisonReport, baseline: Path, *, console: Console | None = None,
+) -> None:
+    output = console if console is not None else Console()
+    summary = Text("Archivo anterior: ", style="bold")
+    summary.append(str(baseline))
+    summary.append(f"\nFilas: {report.baseline_rows:,} → {report.current_rows:,}")
+    summary.append(f" · Columnas: {report.baseline_columns:,} → {report.current_columns:,}")
+    summary.append("\nCompara nombres y tipos de columnas; no evalúa cambios de valores.")
+    status = "REVISAR" if report.changes else "SIN CAMBIOS DE ESQUEMA"
+    output.print(Panel(summary, title=f"Comparación · {status}",
+                       border_style="yellow" if report.changes else "cyan"))
+    labels = {"added": "AGREGADA", "removed": "ELIMINADA", "type_changed": "CAMBIO DE TIPO"}
+    for change in report.changes:
+        line = Text(f"AVISO · {labels[change.kind]} · ", style="yellow")
+        line.append(change.column, style="bold")
+        line.append(f": {change.previous_type or 'ausente'} → {change.current_type or 'ausente'}")
+        output.print(line)
