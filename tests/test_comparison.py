@@ -4,6 +4,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 from rich.console import Console
+from rich.text import Text
 from typer.testing import CliRunner
 
 from blink_data_lint.cli import app
@@ -120,8 +121,13 @@ def test_comparison_report_is_legible_and_literal(width: int) -> None:
     assert all(len(line) <= width for line in text.splitlines())
 
 
-def test_help_keeps_one_command_with_optional_baseline() -> None:
+@pytest.mark.parametrize("force_color", [False, True])
+def test_help_keeps_one_command_with_optional_baseline(monkeypatch, force_color) -> None:
+    if force_color:
+        monkeypatch.setenv("FORCE_COLOR", "1")
+        monkeypatch.delenv("NO_COLOR", raising=False)
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "--baseline" in result.output
-    assert "Commands" not in result.output
+    readable = Text.from_ansi(result.output).plain
+    assert "--baseline" in readable
+    assert "Commands" not in readable
