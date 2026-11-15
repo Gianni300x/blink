@@ -8,12 +8,12 @@ from polars.exceptions import PolarsError
 from rich.console import Console
 from rich.text import Text
 
-from blink.core.analyzer import analyze
-from blink.core.comparison import compare
-from blink.core.summary import summarize
-from blink.io.loader import LoadError, load_dataset
-from blink.io.serializer import serialize_error, serialize_report
-from blink.ui.reporter import show_comparison, show_report
+from blink_data_lint.core.analyzer import analyze
+from blink_data_lint.core.comparison import compare
+from blink_data_lint.core.summary import summarize
+from blink_data_lint.io.loader import LoadError, load_dataset
+from blink_data_lint.io.serializer import serialize_error, serialize_report
+from blink_data_lint.ui.reporter import show_comparison, show_report
 
 app = typer.Typer(
     help="blink: diagnóstico rápido de calidad de datos CSV y Parquet, de solo lectura.",

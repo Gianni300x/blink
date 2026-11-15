@@ -2,8 +2,10 @@
 
 import polars as pl
 
-from blink.core.models import AnalysisReport, ColumnMetrics, Finding
-from blink.core.detectors import detect
+from blink_data_lint.core.models import AnalysisReport, ColumnMetrics, Finding
+from blink_data_lint.core.detectors import detect
+from blink_data_lint.core.duplicates import excess_duplicates
+from blink_data_lint.core.roles import code_like
 
 ID_MIN_VALUES = 10
 ID_UNIQUE_RATIO = 0.95
@@ -73,8 +75,13 @@ def analyze(frame: pl.DataFrame, *, ml: bool = False) -> AnalysisReport:
                 f"Posible ID: {text_unique:,}/{text_count:,} textos no vacíos únicos "
                 f"({text_unique / text_count:.1%}).", name,
             ))
+        elif code_like(name):
+            findings.append(Finding(
+                "possible_code", "info",
+                "Posible código/identificador por nombre; no se trata como medida numérica.", name,
+            ))
 
-    duplicates = rows - frame.n_unique() if rows and width else 0
+    duplicates = excess_duplicates(frame)
     if duplicates:
         findings.append(Finding(
             "duplicates", "warning",

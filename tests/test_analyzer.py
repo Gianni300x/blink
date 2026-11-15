@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from blink.core.analyzer import analyze
+from blink_data_lint.core.analyzer import analyze
 
 
 def test_known_metrics() -> None:

@@ -1,0 +1,69 @@
+name: Pruebas y paquete
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.11', '3.12', '3.13', '3.14']
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.11.20'
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - name: Instalar dependencias bloqueadas
+        run: uv sync --locked --extra dev
+      - name: Ejecutar pruebas
+        run: uv run --locked pytest -q -W error
+      - name: Comprobar comando instalado
+        run: uv run --locked blink --help
+
+  package:
+    name: Verificar distribución
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.11.20'
+          python-version: '3.12'
+      - run: uv build --no-sources
+      - run: uvx twine check --strict dist/*
+      - run: uv run --locked python scripts/check_dist.py
+      - name: Instalar wheel sin modo editable
+        run: |
+          uv venv /tmp/blink-wheel
+          uv pip install --python /tmp/blink-wheel/bin/python dist/*.whl
+          cd /tmp
+          /tmp/blink-wheel/bin/blink --help
+          /tmp/blink-wheel/bin/blink "$GITHUB_WORKSPACE/tests/data/sample_dirty.csv" --json > /tmp/blink-wheel-report.json
+          /tmp/blink-wheel/bin/python -c "import json; r=json.load(open('/tmp/blink-wheel-report.json')); assert r['analysis']['rows']==13 and r['status']=='completed'"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7

@@ -3,13 +3,27 @@ requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
-name = "blink"
-version = "0.1.0.dev0"
+name = "blink-data-lint"
+version = "0.1.0"
 description = "Zero-config, read-only data quality diagnostics for CSV and Parquet."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{name = "Gianni Luigi Messina"}]
+keywords = ["data-quality", "csv", "parquet", "cli", "anomaly-detection"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
 dependencies = [
     "polars>=1.0,<2",
     "numpy>=2.0,<3",
@@ -22,10 +36,18 @@ dependencies = [
 dev = ["pytest>=8.3,<10"]
 
 [project.scripts]
-blink = "blink.cli:app"
+blink = "blink_data_lint.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/Gianni300x/blink"
+Repository = "https://github.com/Gianni300x/blink"
+Issues = "https://github.com/Gianni300x/blink/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/blink"]
+packages = ["src/blink_data_lint"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/pyproject.toml", "/README.md", "/LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

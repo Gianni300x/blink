@@ -1,6 +1,6 @@
 """Resumen compartido por la CLI y sus formatos; sin I/O ni códigos de proceso."""
 
-from blink.core.models import AnalysisReport, ComparisonReport, ReportSummary
+from blink_data_lint.core.models import AnalysisReport, ComparisonReport, ReportSummary
 
 
 def summarize(report: AnalysisReport, comparison: ComparisonReport | None = None) -> ReportSummary:

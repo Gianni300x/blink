@@ -7,7 +7,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from blink.core.models import AnalysisReport, ComparisonReport
+from blink_data_lint.core.models import AnalysisReport, ComparisonReport
 
 
 def _percent(value: float | None) -> str:

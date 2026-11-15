@@ -6,10 +6,10 @@ import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
-from blink.cli import app
-from blink.core.comparison import compare
-from blink.core.models import SchemaChange
-from blink.ui.reporter import show_comparison
+from blink_data_lint.cli import app
+from blink_data_lint.core.comparison import compare
+from blink_data_lint.core.models import SchemaChange
+from blink_data_lint.ui.reporter import show_comparison
 
 
 def test_added_removed_and_type_changes_have_direction() -> None:

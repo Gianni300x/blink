@@ -9,10 +9,10 @@ import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
-from blink.cli import app
-from blink.core.analyzer import analyze
-from blink.core.detectors import broken_type, isolation_forest, numeric_outliers
-from blink.ui.reporter import show_report
+from blink_data_lint.cli import app
+from blink_data_lint.core.analyzer import analyze
+from blink_data_lint.core.detectors import broken_type, isolation_forest, numeric_outliers
+from blink_data_lint.ui.reporter import show_report
 
 
 def test_iqr_known_outlier_and_boundaries() -> None:
@@ -123,7 +123,7 @@ def test_ml_missing_complete_rows_and_constants() -> None:
 
 
 def test_basic_analysis_does_not_import_numpy_or_sklearn() -> None:
-    code = ("import polars as pl; from blink.core.analyzer import analyze; import sys; "
+    code = ("import polars as pl; from blink_data_lint.core.analyzer import analyze; import sys; "
             "analyze(pl.DataFrame({'x': range(100)})); "
             "assert 'sklearn' not in sys.modules; assert 'numpy' not in sys.modules")
     subprocess.run([sys.executable, "-c", code], check=True)

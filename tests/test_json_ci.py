@@ -9,10 +9,10 @@ from polars.exceptions import ComputeError
 import pytest
 from typer.testing import CliRunner
 
-from blink.cli import app
-from blink.core.analyzer import analyze
-from blink.core.summary import summarize
-from blink.io.serializer import serialize_report
+from blink_data_lint.cli import app
+from blink_data_lint.core.analyzer import analyze
+from blink_data_lint.core.summary import summarize
+from blink_data_lint.io.serializer import serialize_report
 
 runner = CliRunner()
 TOP_LEVEL_KEYS = {"schema_version", "status", "sources", "analysis", "comparison", "summary", "error", "exit_code"}
@@ -171,7 +171,7 @@ def test_json_analysis_failure_has_no_partial_success(tmp_path, monkeypatch):
     def fail(*args, **kwargs):
         raise ComputeError("PRIVATE_CELL")
 
-    monkeypatch.setattr("blink.cli.analyze", fail)
+    monkeypatch.setattr("blink_data_lint.cli.analyze", fail)
     result = runner.invoke(app, [str(path), "--json"])
     document = read_document(result)
     assert result.exit_code == 2
@@ -187,7 +187,7 @@ def test_numeric_failures_are_sanitized_in_json(tmp_path, monkeypatch, error):
     def fail(*args, **kwargs):
         raise error("PRIVATE_CELL")
 
-    monkeypatch.setattr("blink.cli.analyze", fail)
+    monkeypatch.setattr("blink_data_lint.cli.analyze", fail)
     result = runner.invoke(app, [str(path), "--json"])
     document = read_document(result)
     assert result.exit_code == 2 and document["error"]["code"] == "analysis_error"
@@ -197,7 +197,7 @@ def test_numeric_failures_are_sanitized_in_json(tmp_path, monkeypatch, error):
 def test_nonfinite_report_fails_as_structured_error_without_partial_json(tmp_path, monkeypatch):
     path = write_frame(tmp_path)
     invalid_report = replace(analyze(pl.DataFrame({"x": range(100)})), null_percent=float("inf"))
-    monkeypatch.setattr("blink.cli.analyze", lambda *args, **kwargs: invalid_report)
+    monkeypatch.setattr("blink_data_lint.cli.analyze", lambda *args, **kwargs: invalid_report)
     result = runner.invoke(app, [str(path), "--json"])
     document = read_document(result)
     assert result.exit_code == 2
@@ -262,7 +262,7 @@ def test_shell_redirected_json_is_parseable_with_exit_one(tmp_path):
     path = write_frame(tmp_path, values=[1, 1, None])
     output = tmp_path / "report.json"
     with output.open("w") as stream:
-        result = subprocess.run([sys.executable, "-m", "blink.cli", str(path), "--json", "--exit-code"],
+        result = subprocess.run([sys.executable, "-m", "blink_data_lint.cli", str(path), "--json", "--exit-code"],
                                 stdout=stream, stderr=subprocess.PIPE, text=True)
     assert result.returncode == 1 and result.stderr == ""
     assert json.loads(output.read_text())["summary"]["warnings"] > 0

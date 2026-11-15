@@ -6,7 +6,7 @@ import polars as pl
 import pytest
 from typer.testing import CliRunner
 
-from blink.cli import app
+from blink_data_lint.cli import app
 
 runner = CliRunner()
 
@@ -51,7 +51,7 @@ def test_invalid_input_fails_cleanly(tmp_path: Path, kind: str) -> None:
 
 
 def test_basic_cli_does_not_import_ml() -> None:
-    code = "import blink.cli, sys; assert 'sklearn' not in sys.modules"
+    code = "import blink_data_lint.cli, sys; assert 'sklearn' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], check=True)
 
 

@@ -4,13 +4,15 @@ import math
 
 import polars as pl
 
-from blink.core.models import DriftMetric
+from blink_data_lint.core.models import DriftMetric
+from blink_data_lint.core.roles import code_like
 
 MIN_ROWS = 100
 MEAN_THRESHOLD = 0.5
 DISTRIBUTION_THRESHOLD = 0.2
 MISSING_THRESHOLD = 0.1
 MAX_CATEGORIES = 50
+CDF_CHUNK_ROWS = 65_536
 
 
 def _metric(
@@ -57,11 +59,6 @@ def _numeric(previous: pl.Series, current: pl.Series) -> tuple[DriftMetric, ...]
     if min(len(before), len(after)) < MIN_ROWS:
         return skipped("Menos de 100 valores finitos en alguno de los archivos.")
     if current.dtype.is_integer():
-        name = current.name.lower()
-        if (name == "id" or name.endswith("_id")) and any(
-            values.n_unique() / len(values) >= 0.95 for values in (before, after)
-        ):
-            return skipped("Posible ID entero por nombre y unicidad ≥95%.")
         if any(max(abs(values.min()), abs(values.max())) > 2**53 for values in (before, after)):
             return skipped("Enteros fuera de ±2^53; float64 perdería precisión.")
 
@@ -91,10 +88,15 @@ def _numeric(previous: pl.Series, current: pl.Series) -> tuple[DriftMetric, ...]
     # Distancia empírica exacta: evaluar ambas CDF a la derecha de cada valor
     # observado contempla empates y tamaños distintos, sin p-valores ni muestreo.
     old_sorted, new_sorted = np.sort(old), np.sort(new)
-    support = np.union1d(old_sorted, new_sorted)
-    old_cdf = np.searchsorted(old_sorted, support, side="right") / len(old_sorted)
-    new_cdf = np.searchsorted(new_sorted, support, side="right") / len(new_sorted)
-    distance = float(np.max(np.abs(new_cdf - old_cdf)))
+    distance = 0.0
+    # Recorrer todo el soporte en bloques, sin construir la unión ni dos CDF
+    # completas. Es el mismo máximo exacto, no una muestra de observaciones.
+    for values in (old_sorted, new_sorted):
+        for offset in range(0, len(values), CDF_CHUNK_ROWS):
+            support = np.unique(values[offset:offset + CDF_CHUNK_ROWS])
+            delta = np.searchsorted(new_sorted, support, side="right") / len(new_sorted)
+            delta -= np.searchsorted(old_sorted, support, side="right") / len(old_sorted)
+            distance = max(distance, float(np.max(np.abs(delta))))
     return mean, result("ks", DISTRIBUTION_THRESHOLD, score=distance)
 
 
@@ -133,7 +135,9 @@ def detect_drift(current: pl.DataFrame, baseline: pl.DataFrame) -> tuple[DriftMe
                                    reason="Tipos diferentes; no se convierten valores para comparar."))
             continue
         results.append(_missing(previous, column))
-        if dtype.is_integer() or dtype.is_float():
+        if (dtype.is_integer() or dtype.is_float()) and code_like(name):
+            results.append(_categorical(previous, column))
+        elif dtype.is_integer() or dtype.is_float():
             results.extend(_numeric(previous, column))
         elif dtype in (pl.String, pl.Boolean):
             results.append(_categorical(previous, column))

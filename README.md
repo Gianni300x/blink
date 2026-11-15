@@ -21,36 +21,28 @@ cuando un análisis se omite. Son indicios para revisar en contexto.
 
 ## Instalación
 
-Necesitás [Python 3.11 o superior](https://www.python.org/downloads/) y
-[Git](https://git-scm.com/downloads/). Abrí una terminal y descargá el proyecto:
+Requiere **Python 3.11 o superior**. Con [uv](https://docs.astral.sh/uv/getting-started/installation/),
+instalá la app en un entorno aislado y comprobá la ayuda:
 
 ```bash
-git clone https://github.com/Gianni300x/blink.git
-cd blink
+uv tool install blink-data-lint
+blink --help
 ```
 
-Instalá [uv siguiendo su guía oficial](https://docs.astral.sh/uv/getting-started/installation/)
-si todavía no lo tenés. Desde la carpeta `blink`, instalá las dependencias y
-probá el archivo de ejemplo incluido:
-
-```bash
-uv sync
-uv run blink tests/data/sample_dirty.csv
-```
-
-La salida muestra el diagnóstico en la terminal; no crea ni modifica archivos
-de datos. La instalación necesita conexión a Internet para descargar dependencias.
+El paquete se llama **`blink-data-lint`** en PyPI; el comando es **`blink`**.
+Si acabás de instalar uv y la terminal no encuentra `blink`, ejecutá
+`uv tool update-shell` y abrí una terminal nueva.
 
 <details>
-<summary>Alternativa con pip, sin uv</summary>
+<summary>Alternativas: pip o instalación desde el repositorio</summary>
 
-Desde la carpeta `blink`, en macOS/Linux:
+Con pip, en macOS/Linux:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
-blink tests/data/sample_dirty.csv
+python -m pip install blink-data-lint
+blink --help
 ```
 
 En Windows, desde PowerShell:
@@ -58,51 +50,62 @@ En Windows, desde PowerShell:
 ```powershell
 py -3 -m venv .venv
 .venv\Scripts\Activate.ps1
-python -m pip install -e .
-blink tests/data/sample_dirty.csv
+python -m pip install blink-data-lint
+blink --help
 ```
 
-Con esta instalación, usá `blink` en lugar de `uv run blink` en los ejemplos de
-abajo y mantené el entorno activo. En una terminal nueva, volvé a activarlo con
+Mantené el entorno activo. En una terminal nueva, volvé a activarlo con
 `source .venv/bin/activate` (macOS/Linux) o `.venv\Scripts\Activate.ps1` (Windows).
+
+Para trabajar desde el código fuente, necesitás [Git](https://git-scm.com/downloads/):
+
+```bash
+git clone https://github.com/Gianni300x/blink.git
+cd blink
+uv sync
+uv run blink tests/data/sample_dirty.csv
+```
+
+En este caso, usá `uv run blink` en lugar de `blink` en los ejemplos de abajo.
+Con pip desde el repositorio, podés usar `python -m pip install -e .` dentro del
+entorno virtual en lugar de instalar el paquete desde PyPI.
 
 </details>
 
 ## Uso
 
 ```bash
-uv run blink datos.csv
-uv run blink datos.parquet
+blink datos.csv
+blink datos.parquet
 ```
 
 Reemplazá `datos.csv` o `datos.parquet` por la ruta de tu archivo. Si tiene
-espacios, escribila entre comillas: `uv run blink "mis datos/ventas.csv"`.
+espacios, escribila entre comillas: `blink "mis datos/ventas.csv"`.
 
 Para habilitar el análisis con ML:
 
 ```bash
-uv run blink datos.csv --ml
+blink datos.csv --ml
 ```
 
 Para comparar con un archivo anterior y detectar cambios de columnas, tipos,
 medias, distribuciones o proporción de faltantes:
 
 ```bash
-uv run blink datos.csv --baseline anterior.csv
+blink datos.csv --baseline anterior.csv
 ```
 
 Ambos archivos pueden ser CSV o Parquet. Se comparan columnas por nombre;
 un cambio de orden no genera un aviso. Los valores se comparan de forma agregada,
 sin emparejar filas. La salida muestra las métricas, umbrales y cobertura.
 
-Para probarlo con el archivo de ejemplo incluido o consultar la ayuda:
+Para consultar la ayuda:
 
 ```bash
-uv run blink tests/data/sample_dirty.csv
-uv run blink --help
+blink --help
 ```
 
-Para desactivar los colores en macOS/Linux: `NO_COLOR=1 uv run blink datos.csv`.
+Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
 
 ## Límites de uso
 
@@ -116,6 +119,10 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 uv run blink datos.csv`.
 - ML necesita al menos 32 filas completas y finitas en sus columnas numéricas
   elegibles. Si hay más de 32 columnas elegibles, se omite. Evalúa hasta 10.000
   filas; por encima toma una muestra y muestra su cobertura, sin extrapolar conteos.
+- Nombres como `VendorID`, `PULocationID`, `payment_type` o `codigo_postal`
+  indican posibles códigos o etiquetas. Se omiten de IQR y ML; al comparar
+  archivos se usan frecuencias, no medias o distancias numéricas. Es una
+  heurística por nombre y se informa como tal; no demuestra una clave primaria.
 - Una anomalía es un indicio, no una prueba de error. Un análisis omitido tampoco
   equivale a un resultado sin problemas. Revisá los motivos que muestra la salida.
 - La comparación de valores requiere tipos idénticos y al menos 100 observaciones
@@ -133,13 +140,13 @@ El uso habitual sigue siendo `blink archivo.csv`. Si necesitás un informe para
 otro programa, agregá `--json`:
 
 ```bash
-uv run blink datos.csv --json > informe.json
+blink datos.csv --json > informe.json
 ```
 
 Para hacer fallar una validación automatizada cuando aparezcan avisos:
 
 ```bash
-uv run blink datos.csv --json --exit-code > informe.json
+blink datos.csv --json --exit-code > informe.json
 ```
 
 También podés combinarlo con `--baseline anterior.csv` y `--ml`. En un paso de CI,
@@ -166,13 +173,13 @@ errores de lectura/análisis generan `status: "error"` y un diagnóstico por std
 sin informe parcial. Los errores de sintaxis del comando se muestran por stderr
 sin generar un documento JSON; comprobá siempre el código de salida.
 
-Para reproducir un fallo de validación, usá el archivo de ejemplo incluido:
+Si clonaste el repositorio, podés reproducir un fallo de validación con su CSV de ejemplo:
 
 ```bash
-uv run blink tests/data/sample_dirty.csv --json --exit-code > informe.json
+blink tests/data/sample_dirty.csv --json --exit-code > informe.json
 ```
 
 Este ejemplo devuelve `1` porque contiene problemas conocidos; el informe JSON
 queda disponible para revisar los avisos.
 
-Licencia [MIT](LICENSE).
+Licencia [MIT](https://github.com/Gianni300x/blink/blob/main/LICENSE).

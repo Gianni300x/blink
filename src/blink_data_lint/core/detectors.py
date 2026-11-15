@@ -4,24 +4,14 @@ import math
 
 import polars as pl
 
-from blink.core.models import DetectorResult, Finding
+from blink_data_lint.core.models import DetectorResult, Finding
+from blink_data_lint.core.roles import code_like
 
 MIN_VALUES = 10
 TYPE_RATIO = 0.9
 ML_ROWS = 10_000
 ML_COLUMNS = 32
 SEED = 42
-
-
-def _numeric_id(series: pl.Series) -> bool:
-    """Indicio conservador: nombre de ID, entero y alta unicidad."""
-    name = series.name.lower()
-    return (
-        series.dtype.is_integer()
-        and (name == "id" or name.endswith("_id"))
-        and len(series) >= MIN_VALUES
-        and series.n_unique() / len(series) >= 0.95
-    )
 
 
 def numeric_outliers(series: pl.Series) -> DetectorResult:
@@ -31,8 +21,8 @@ def numeric_outliers(series: pl.Series) -> DetectorResult:
                 eligible_rows=len(values), evaluated_rows=0, count=None)
     if len(values) < MIN_VALUES:
         return DetectorResult(**base, reason="Menos de 10 valores finitos.")
-    if _numeric_id(values):
-        return DetectorResult(**base, reason="Posible ID entero por nombre y unicidad ≥95%.")
+    if code_like(series.name):
+        return DetectorResult(**base, reason="Posible ID/código por nombre; no se aplica IQR a etiquetas.")
     # Escalado evita overflow al restar extremos finitos; las comparaciones
     # conservan el criterio IQR. Las cotas publicadas usan la escala original.
     scale = max(abs(values.min()), abs(values.max())) or 1
@@ -61,6 +51,8 @@ def broken_type(series: pl.Series) -> DetectorResult:
                 eligible_rows=len(values), evaluated_rows=0, count=None)
     if len(values) < MIN_VALUES:
         return DetectorResult(**base, reason="Menos de 10 textos no vacíos.")
+    if code_like(series.name):
+        return DetectorResult(**base, reason="Posible ID/código por nombre; no se infiere un tipo roto.")
     # No convertir la columna original: los valores incompatibles se conservan.
     numeric = values.cast(pl.Float64, strict=False)
     numeric_count = numeric.is_finite().fill_null(False).sum()
@@ -96,7 +88,7 @@ def isolation_forest(frame: pl.DataFrame, *, enabled: bool) -> DetectorResult:
             continue
         finite = frame[name].drop_nulls()
         finite = finite.filter(finite.is_finite())
-        if len(finite) >= MIN_VALUES and finite.n_unique() > 1 and not _numeric_id(finite):
+        if len(finite) >= MIN_VALUES and finite.n_unique() > 1 and not code_like(name):
             columns.append(name)
     if len(columns) > ML_COLUMNS:
         return DetectorResult(**base, reason="Más de 32 columnas elegibles; trabajo ML acotado.")

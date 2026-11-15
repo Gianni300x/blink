@@ -47,7 +47,7 @@ def main() -> None:
                 getattr(frame, f"write_{suffix}")(baseline)
                 baseline_digest = hashlib.sha256(baseline.read_bytes()).hexdigest()
             timings = []
-            command = [sys.executable, "-m", "blink.cli", str(path)]
+            command = [sys.executable, "-m", "blink_data_lint.cli", str(path)]
             if args.ml:
                 command.append("--ml")
             if args.baseline:
@@ -66,7 +66,7 @@ def main() -> None:
             memory_code = (
                 "import resource, runpy, sys, json; "
                 "sys.argv = ['blink', *sys.argv[1:]]; "
-                "\ntry: runpy.run_module('blink.cli', run_name='__main__')"
+                "\ntry: runpy.run_module('blink_data_lint.cli', run_name='__main__')"
                 "\nexcept SystemExit as exc:"
                 "\n if exc.code not in (None, 0): raise"
                 "\nprint(json.dumps({'max_rss': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}), file=sys.stderr)"

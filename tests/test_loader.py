@@ -3,8 +3,8 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from blink.core.analyzer import analyze
-from blink.io.loader import LoadError, load_dataset
+from blink_data_lint.core.analyzer import analyze
+from blink_data_lint.io.loader import LoadError, load_dataset
 
 
 def test_csv_parquet_equivalence_and_read_only(tmp_path: Path) -> None:

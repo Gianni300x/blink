@@ -2,8 +2,8 @@
 
 import polars as pl
 
-from blink.core.models import ComparisonReport, SchemaChange
-from blink.core.drift import detect_drift
+from blink_data_lint.core.models import ComparisonReport, SchemaChange
+from blink_data_lint.core.drift import detect_drift
 
 
 def compare(current: pl.DataFrame, baseline: pl.DataFrame) -> ComparisonReport:

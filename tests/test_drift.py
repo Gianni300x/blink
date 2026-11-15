@@ -9,9 +9,9 @@ import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
-from blink.cli import app
-from blink.core.comparison import compare
-from blink.ui.reporter import show_comparison
+from blink_data_lint.cli import app
+from blink_data_lint.core.comparison import compare
+from blink_data_lint.ui.reporter import show_comparison
 
 
 def metrics(current, previous):
@@ -65,6 +65,15 @@ def test_ks_matches_reference_for_ties_and_unequal_sizes() -> None:
     assert result.score == pytest.approx(ks_2samp(previous, current).statistic)
 
 
+def test_ks_chunk_boundaries_preserve_the_exact_statistic() -> None:
+    from scipy.stats import ks_2samp
+
+    previous = [i % 90_000 for i in range(140_000)]
+    current = [i % 110_000 for i in range(150_000)]
+    result = metrics(pl.DataFrame({"x": current}), pl.DataFrame({"x": previous}))["ks"]
+    assert result.score == pytest.approx(ks_2samp(previous, current, method="asymp").statistic, abs=1e-15)
+
+
 @pytest.mark.parametrize("shift,expected", [(0.49, False), (0.5, True), (0.51, True)])
 def test_mean_threshold(shift, expected) -> None:
     result = metrics(pl.DataFrame({"x": [-1. + shift, 1. + shift] * 100}),
@@ -113,8 +122,8 @@ def test_category_limit_is_on_union_and_ids_are_omitted() -> None:
     assert "50 categorías" in result.reason
     result = metrics(pl.DataFrame({"order_id": range(100, 200)}),
                      pl.DataFrame({"order_id": range(100)}))
-    assert "Posible ID" in result["ks"].reason
-    assert not result["ks"].flagged
+    assert "50 categorías" in result["total_variation"].reason
+    assert not result["total_variation"].flagged
 
 
 @pytest.mark.parametrize("null_count,expected", [(29, False), (30, True), (31, True)])
@@ -209,7 +218,7 @@ def test_report_does_not_expose_categories_and_shows_coverage(width) -> None:
 
 
 def test_basic_analysis_still_does_not_import_ml_or_numpy() -> None:
-    code = ("import polars as pl; from blink.core.analyzer import analyze; import sys; "
+    code = ("import polars as pl; from blink_data_lint.core.analyzer import analyze; import sys; "
             "analyze(pl.DataFrame({'x': range(100)})); "
             "assert 'numpy' not in sys.modules; assert 'sklearn' not in sys.modules")
     subprocess.run([sys.executable, "-c", code], check=True)

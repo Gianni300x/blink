@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from blink.core.models import AnalysisReport, ColumnMetrics, Finding
-from blink.ui.reporter import show_report
+from blink_data_lint.core.models import AnalysisReport, ColumnMetrics, Finding
+from blink_data_lint.ui.reporter import show_report
 
 
 @pytest.mark.parametrize("width", [40, 80, 120])

@@ -3,7 +3,7 @@
 from dataclasses import asdict
 import json
 
-from blink.core.models import AnalysisReport, ComparisonReport, ReportSummary
+from blink_data_lint.core.models import AnalysisReport, ComparisonReport, ReportSummary
 
 SCHEMA_VERSION = "1.0"
 
