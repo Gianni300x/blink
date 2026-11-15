@@ -127,7 +127,52 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 uv run blink datos.csv`.
   la distribución. Las categorías se limitan a 50 valores distintos entre ambos
   archivos; IDs/texto libre y tipos no compatibles pueden omitir ese análisis.
 
-Los avisos no hacen fallar el comando: devuelve `0` si completó la inspección
-y `2` ante un error de uso, lectura o análisis.
+## Integración con otros programas y CI
+
+El uso habitual sigue siendo `blink archivo.csv`. Si necesitás un informe para
+otro programa, agregá `--json`:
+
+```bash
+uv run blink datos.csv --json > informe.json
+```
+
+Para hacer fallar una validación automatizada cuando aparezcan avisos:
+
+```bash
+uv run blink datos.csv --json --exit-code > informe.json
+```
+
+También podés combinarlo con `--baseline anterior.csv` y `--ml`. En un paso de CI,
+el código de salida determina si continúa o falla la validación:
+
+| Código | Significado |
+| --- | --- |
+| `0` | Inspección completada; sin `--exit-code`, los avisos también devuelven `0`. |
+| `1` | Hay avisos y se activó `--exit-code`. |
+| `2` | Error de uso, lectura o análisis, con o sin `--exit-code`. |
+
+Si preferís ver las tablas en el log de CI, usá `--exit-code` sin `--json`.
+
+Se consideran avisos los hallazgos de calidad, cambios de esquema y métricas de
+drift que superan su umbral. Los posibles IDs informativos y los análisis omitidos
+no hacen fallar CI por sí solos. Dos métricas alertadas en una columna cuentan
+como dos avisos. Un aviso sigue siendo un indicio para revisar en contexto.
+
+El JSON usa `schema_version: "1.0"` e incluye `analysis`, `comparison`, `summary`,
+`error` y `exit_code`, además de los archivos y políticas de lectura en `sources`.
+`status: "completed"` indica que la ejecución terminó, no que todos los datos sean
+correctos. Cada detector indica `completed` o `skipped` y su cobertura. Los
+errores de lectura/análisis generan `status: "error"` y un diagnóstico por stderr,
+sin informe parcial. Los errores de sintaxis del comando se muestran por stderr
+sin generar un documento JSON; comprobá siempre el código de salida.
+
+Para reproducir un fallo de validación, usá el archivo de ejemplo incluido:
+
+```bash
+uv run blink tests/data/sample_dirty.csv --json --exit-code > informe.json
+```
+
+Este ejemplo devuelve `1` porque contiene problemas conocidos; el informe JSON
+queda disponible para revisar los avisos.
 
 Licencia [MIT](LICENSE).

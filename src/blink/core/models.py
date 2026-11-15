@@ -89,3 +89,10 @@ class ComparisonReport:
     current_columns: int
     changes: tuple[SchemaChange, ...]
     drift: tuple[DriftMetric, ...] = ()
+
+
+@dataclass(frozen=True)
+class ReportSummary:
+    warnings: int
+    information: int
+    skipped_analyses: int
