@@ -47,7 +47,7 @@ def test_header_only_csv(tmp_path: Path) -> None:
 @pytest.mark.parametrize(("suffix", "content"), [
     (".csv", b""),
     (".csv", b"a,b\n1,2,3\n"),
-    (".csv", b"a\n\xff\n"),
+    (".csv", b"a\n\x81\n"),
     (".parquet", b"not parquet"),
 ])
 def test_invalid_inputs_are_contextual_errors(tmp_path: Path, suffix: str, content: bytes) -> None:
@@ -61,3 +61,107 @@ def test_invalid_inputs_are_contextual_errors(tmp_path: Path, suffix: str, conte
 def test_missing_input_is_load_error(tmp_path: Path) -> None:
     with pytest.raises(LoadError):
         load_dataset(tmp_path / "missing.csv")
+
+
+@pytest.mark.parametrize('separator', [',', ';', '\t', '|'])
+@pytest.mark.parametrize('encoding', ['utf-8', 'utf-8-sig', 'cp1252', 'utf-16'])
+def test_excel_csv_dialects_and_encodings_are_visible(tmp_path, separator, encoding):
+    path = tmp_path / 'datos[1].csv'
+    text = f'nombre{separator}valor\r\n"Muñoz, José"{separator}12\r\n"Peña; Ana"{separator}15\r\n'
+    path.write_bytes(text.encode(encoding))
+    original = path.read_bytes()
+    loaded = load_dataset(path)
+    temporary = Path(loaded.temporary.name) if loaded.temporary else None
+    try:
+        assert loaded.frame['nombre'].to_list() == ['Muñoz, José', 'Peña; Ana']
+        assert loaded.frame['valor'].to_list() == [12, 15]
+        assert encoding in loaded.policy
+        assert path.read_bytes() == original
+    finally:
+        loaded.close()
+    if temporary:
+        assert not temporary.exists()
+
+
+def test_csv_quoted_separator_and_multiline(tmp_path):
+    path = tmp_path/'quoted.csv'
+    path.write_text('name;amount\n"one;two\nthree";10\n"four,five";20\n', encoding='utf-8')
+    loaded = load_dataset(path)
+    assert loaded.frame.shape == (2, 2)
+    assert loaded.frame[0, 'name'] == 'one;two\nthree'
+    assert 'punto y coma' in loaded.policy
+
+
+def test_late_undefined_encoding_is_not_lossily_replaced(tmp_path):
+    path = tmp_path/'late.csv'
+    path.write_bytes(b'name\n' + b'valid\n' * 200000 + b'\x81\n')
+    with pytest.raises(LoadError):
+        load_dataset(path)
+
+
+def test_transcoded_csv_temp_is_cleaned_when_baseline_fails(tmp_path, monkeypatch):
+    import blink_data_lint.io.loader as loader
+    from blink_data_lint.cli import app
+    from typer.testing import CliRunner
+    real = loader.tempfile.TemporaryDirectory
+    directories = []
+    def track(*args, **kwargs):
+        directory = real(*args, **kwargs)
+        directories.append(Path(directory.name))
+        return directory
+    monkeypatch.setattr(loader.tempfile, 'TemporaryDirectory', track)
+    path = tmp_path/'data.csv'
+    path.write_bytes('name;value\nJosé;1\n'.encode('cp1252'))
+    result = CliRunner().invoke(app, [str(path), '--baseline', str(tmp_path/'missing.csv'), '--json'])
+    assert result.exit_code == 2
+    assert directories and all(not p.exists() for p in directories)
+
+
+@pytest.mark.parametrize('content', [b'a,b;c\n1,2;3\n', b'a\nhello\x00world\n', 'a\nhello\n'.encode('utf-32')])
+def test_ambiguous_or_binary_csv_is_rejected(tmp_path, content):
+    path = tmp_path/'ambiguous.csv'
+    path.write_bytes(content)
+    with pytest.raises(LoadError, match='No se pudo leer'):
+        load_dataset(path)
+
+
+def test_columnar_cache_preserves_csv_values_and_record_order(tmp_path, monkeypatch):
+    import blink_data_lint.io.loader as loader
+    monkeypatch.setattr(loader, 'CSV_CACHE_BYTES', 1)
+    path = tmp_path/'data.csv'
+    path.write_text('name;value\n"one\ntwo";1\n"";\n;3\n"Muñoz";error\n', encoding='utf-8')
+    original = path.read_bytes()
+    loaded = load_dataset(path)
+    temporary = Path(loaded.temporary.name)
+    try:
+        assert 'copia temporal local columnar' in loaded.policy
+        assert loaded.frame['name'].to_list() == ['one\ntwo', '', None, 'Muñoz']
+        assert loaded.frame['value'].to_list() == ['1', None, '3', 'error']
+        assert (temporary/'cache.parquet').exists()
+        assert path.read_bytes() == original
+    finally:
+        loaded.close()
+    assert not temporary.exists()
+
+
+def test_cache_disk_failure_is_sanitized_and_cleaned(tmp_path, monkeypatch):
+    import blink_data_lint.io.loader as loader
+    from blink_data_lint.cli import app
+    from typer.testing import CliRunner
+    monkeypatch.setattr(loader, 'CSV_CACHE_BYTES', 1)
+    real = loader.tempfile.TemporaryDirectory
+    directories = []
+    def track(*args, **kwargs):
+        directory = real(*args, **kwargs)
+        directories.append(Path(directory.name))
+        return directory
+    def fail(*args, **kwargs):
+        raise OSError('PRIVATE_VALUE')
+    monkeypatch.setattr(loader.tempfile, 'TemporaryDirectory', track)
+    monkeypatch.setattr(pl.LazyFrame, 'sink_parquet', fail)
+    path = tmp_path/'data.csv'
+    path.write_text('amount\n1\n2\n')
+    result = CliRunner().invoke(app, [str(path), '--json'])
+    assert result.exit_code == 2
+    assert 'PRIVATE_VALUE' not in result.stdout + result.stderr
+    assert directories and all(not p.exists() for p in directories)

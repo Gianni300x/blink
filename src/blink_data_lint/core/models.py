@@ -6,11 +6,18 @@ from typing import Literal
 
 
 @dataclass(frozen=True)
+class RowExample:
+    row: int  # Registro de datos, desde 1; no línea física del archivo CSV.
+    values: dict[str, str]
+
+
+@dataclass(frozen=True)
 class Finding:
     code: str
     severity: Literal["info", "warning"]
     message: str
     column: str | None = None
+    examples: tuple[RowExample, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,7 @@ class DetectorResult:
     count: int | None
     parameters: tuple[tuple[str, str], ...] = ()
     reason: str | None = None
+    examples: tuple[RowExample, ...] = ()
 
 
 @dataclass(frozen=True)

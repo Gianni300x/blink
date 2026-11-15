@@ -17,7 +17,15 @@ previa, no envía datos a servicios externos y no modifica tus archivos.
 - Compara columnas, tipos y distribuciones con un archivo anterior mediante `--baseline`.
 
 Los resultados aparecen en tablas de terminal, con conteos, cobertura y motivos
-cuando un análisis se omite. Son indicios para revisar en contexto.
+cuando un análisis se omite. Los avisos incluyen hasta tres ejemplos con su
+número de registro original y los valores observados. Son indicios para revisar
+en contexto.
+
+Los registros empiezan en **1, sin contar la cabecera**. En CSV, una celda puede
+contener saltos de línea: el número de registro no es una línea física del archivo.
+Los valores se muestran escapados y se truncan a 100 caracteres. Duplicados y ML
+muestran hasta tres columnas por ejemplo; los demás avisos muestran la columna
+afectada. Los ejemplos son parciales; el conteo conserva la cobertura indicada.
 
 ## Instalación
 
@@ -99,6 +107,10 @@ Ambos archivos pueden ser CSV o Parquet. Se comparan columnas por nombre;
 un cambio de orden no genera un aviso. Los valores se comparan de forma agregada,
 sin emparejar filas. La salida muestra las métricas, umbrales y cobertura.
 
+En una terminal interactiva, Blink muestra la etapa actual y avance por columnas
+cuando puede medirlo. El indicador desaparece al terminar, se escribe por stderr
+y se desactiva en logs o CI sin terminal; `--json` conserva stdout limpio.
+
 Para consultar la ayuda:
 
 ```bash
@@ -109,8 +121,23 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
 
 ## Límites de uso
 
-- Archivos locales CSV o Parquet que entren en memoria. CSV requiere UTF-8,
-  comas y una primera fila de cabecera; no se adivinan otros separadores.
+- Archivos locales CSV o Parquet. La lectura y los agregados se procesan por
+  columnas y lotes; se relee el archivo para reducir la memoria. Los CSV de
+  16 MiB o más se convierten una vez a una copia temporal local Parquet para
+  evitar interpretar el texto en cada pasada; la política de lectura lo indica.
+  Los conteos de únicos/duplicados y los cálculos exactos de una columna todavía necesitan
+  memoria proporcional a sus datos. No se garantiza RAM constante ni capacidad
+  para cualquier archivo mayor que la memoria disponible.
+- CSV requiere cabecera. Se detectan coma, punto y coma, tabulador o barra `|`,
+  respetando comillas. La lectura completa valida UTF-8; se reconocen BOM UTF-8
+  y UTF-16. Si UTF-8 falla, se intenta Windows-1252 y se informa como codificación
+  estimada; no se reemplazan bytes ilegibles. Codificaciones indistinguibles no
+  pueden confirmarse automáticamente: comprobá los acentos de los ejemplos.
+  Una estructura ambigua o inválida se rechaza. Para resolverla, exportá como
+  UTF-8 con un único separador y campos entre comillas. No se interpretan comas
+  decimales automáticamente. Las conversiones de codificación usan una copia
+  temporal local UTF-8. Esa copia y el Parquet temporal de CSV grandes se
+  eliminan al terminar; necesitan espacio libre en disco.
 - IQR necesita al menos 10 valores numéricos finitos. Si el rango intercuartílico
   es cero, se omite el detector y se indica el motivo.
 - Los tipos rotos requieren al menos 10 textos no vacíos y una mayoría ≥90 %
@@ -118,7 +145,11 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
   locales como `01/02/2026`.
 - ML necesita al menos 32 filas completas y finitas en sus columnas numéricas
   elegibles. Si hay más de 32 columnas elegibles, se omite. Evalúa hasta 10.000
-  filas; por encima toma una muestra y muestra su cobertura, sin extrapolar conteos.
+  filas; por encima selecciona por hash del número de registro con semilla fija,
+  antes de materializar la muestra. Muestra su cobertura sin extrapolar conteos.
+  La muestra se reproduce con la misma entrada y versiones de dependencias;
+  puede cambiar respecto de versiones anteriores de Blink. ML detecta rareza,
+  no valida que una operación de negocio sea correcta.
 - Nombres como `VendorID`, `PULocationID`, `payment_type` o `codigo_postal`
   indican posibles códigos o etiquetas. Se omiten de IQR y ML; al comparar
   archivos se usan frecuencias, no medias o distancias numéricas. Es una
@@ -165,11 +196,15 @@ drift que superan su umbral. Los posibles IDs informativos y los análisis omiti
 no hacen fallar CI por sí solos. Dos métricas alertadas en una columna cuentan
 como dos avisos. Un aviso sigue siendo un indicio para revisar en contexto.
 
-El JSON usa `schema_version: "1.0"` e incluye `analysis`, `comparison`, `summary`,
+Los informes de terminal y JSON incluyen pequeños extractos de tus datos locales;
+consideralo antes de compartirlos o guardarlos en logs de CI.
+
+El JSON usa `schema_version: "1.1"` e incluye `analysis`, `comparison`, `summary`,
 `error` y `exit_code`, además de los archivos y políticas de lectura en `sources`.
 `status: "completed"` indica que la ejecución terminó, no que todos los datos sean
-correctos. Cada detector indica `completed` o `skipped` y su cobertura. Los
-errores de lectura/análisis generan `status: "error"` y un diagnóstico por stderr,
+correctos. Cada hallazgo y detector incluye `examples`, con `row` (registro desde 1) y
+`values` (valores como texto escapado). Cada detector indica `completed` o
+`skipped` y su cobertura. Los errores de lectura/análisis generan `status: "error"` y un diagnóstico por stderr,
 sin informe parcial. Los errores de sintaxis del comando se muestran por stderr
 sin generar un documento JSON; comprobá siempre el código de salida.
 

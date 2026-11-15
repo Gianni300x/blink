@@ -6,12 +6,12 @@ import polars as pl
 
 from blink_data_lint.core.models import DetectorResult, Finding
 from blink_data_lint.core.roles import code_like
+from blink_data_lint.core.progress import ProgressCallback, notify
+from blink_data_lint.core.evidence import series_examples
+from blink_data_lint.core.ml import ML_COLUMNS, isolation_lazy
 
 MIN_VALUES = 10
 TYPE_RATIO = 0.9
-ML_ROWS = 10_000
-ML_COLUMNS = 32
-SEED = 42
 
 
 def numeric_outliers(series: pl.Series) -> DetectorResult:
@@ -36,9 +36,12 @@ def numeric_outliers(series: pl.Series) -> DetectorResult:
     lower, upper = low * scale, high * scale
     if not math.isfinite(lower) or not math.isfinite(upper):
         return DetectorResult(**base, reason="Cotas IQR fuera del rango float64.")
-    count = ((normalized < low) | (normalized > high)).sum()
+    # Mantener las posiciones del archivo; no numerar la serie ya filtrada.
+    original = series.cast(pl.Float64) / scale
+    mask = series.is_finite().fill_null(False) & ((original < low) | (original > high))
+    count = mask.sum()
     base.update(evaluated_rows=len(values), count=count)
-    return DetectorResult(**base, parameters=(
+    return DetectorResult(**base, examples=series_examples(series, mask), parameters=(
         ("factor", "1.5"), ("cuantiles", "lineales"),
         ("inferior", f"{lower:.12g}"), ("superior", f"{upper:.12g}"),
     ))
@@ -70,8 +73,15 @@ def broken_type(series: pl.Series) -> DetectorResult:
                   if leading_zero and numeric_count / len(values) >= TYPE_RATIO
                   else "Sin mayoría ≥90% numérica o de fechas ISO; no se adivina intención.")
         return DetectorResult(**base, reason=reason)
+    original = series.str.strip_chars()
+    present = original.is_not_null() & (original != "")
+    if target == "numérico finito":
+        valid = original.cast(pl.Float64, strict=False).is_finite().fill_null(False)
+    else:
+        valid = (original.str.contains(r"^\d{4}-\d{2}-\d{2}$") &
+                 original.str.to_date(format="%Y-%m-%d", strict=False).is_not_null()).fill_null(False)
     base.update(evaluated_rows=len(values), count=len(values) - compatible)
-    return DetectorResult(**base, parameters=(
+    return DetectorResult(**base, examples=series_examples(series, present & ~valid), parameters=(
         ("tipo candidato", target), ("proporción mínima", "0.9"),
         ("compatibles", str(compatible)),
     ))
@@ -95,42 +105,26 @@ def isolation_forest(frame: pl.DataFrame, *, enabled: bool) -> DetectorResult:
     base.update(columns=tuple(columns))
     if not columns:
         return DetectorResult(**base, reason="Sin columnas numéricas variables elegibles.")
-    eligible = frame.select(columns).filter(pl.all_horizontal(
-        pl.col(name).is_finite().fill_null(False) for name in columns
-    ))
-    base.update(eligible_rows=eligible.height)
-    if eligible.height < 32:
-        return DetectorResult(**base, reason="Menos de 32 filas completas y finitas.")
-    sample = eligible.sample(n=ML_ROWS, seed=SEED, shuffle=True) if eligible.height > ML_ROWS else eligible
-    # Solo la muestra acotada cruza a NumPy. sklearn no se importa al arrancar.
-    import numpy as np
-    from sklearn.ensemble import IsolationForest
-
-    matrix = sample.to_numpy().astype(np.float64)
-    # sklearn convierte internamente a float32; escalar evita overflow.
-    matrix /= np.maximum(np.abs(matrix).max(axis=0), 1)
-    if not np.any(np.ptp(matrix.astype(np.float32), axis=0) > 0):
-        return DetectorResult(**base, reason="Sin variación representable en la muestra float32.")
-    model = IsolationForest(n_estimators=64, max_samples=min(256, sample.height), contamination="auto",
-                            random_state=SEED, n_jobs=1)
-    count = int((model.fit_predict(matrix) == -1).sum())
-    base.update(evaluated_rows=sample.height, count=count)
-    return DetectorResult(**base, parameters=(
-        ("seed", str(SEED)), ("árboles", "64"), ("max_samples", str(min(256, sample.height))),
-        ("límite de filas", str(ML_ROWS)), ("límite de columnas", str(ML_COLUMNS)),
-        ("contamination", "auto"), ("umbral decision_function", "<0"), ("n_jobs", "1"),
-    ))
+    return isolation_lazy(frame.lazy(), rows=frame.height, columns=columns)
 
 
-def detect(frame: pl.DataFrame, *, ml: bool = False) -> tuple[tuple[DetectorResult, ...], tuple[Finding, ...]]:
+def detect(frame: pl.DataFrame, *, ml: bool = False, progress: ProgressCallback | None = None) -> tuple[tuple[DetectorResult, ...], tuple[Finding, ...]]:
     results = []
-    findings = []
-    for name, dtype in frame.schema.items():
+    notify(progress, "Analizando columnas", 0, frame.width)
+    for index, (name, dtype) in enumerate(frame.schema.items()):
         if dtype.is_integer() or dtype.is_float():
             results.append(numeric_outliers(frame[name]))
         elif dtype == pl.String:
             results.append(broken_type(frame[name]))
+        notify(progress, "Analizando columnas", index + 1, frame.width)
+    if ml:
+        notify(progress, "Ejecutando ML")
     results.append(isolation_forest(frame, enabled=ml))
+    return tuple(results), findings_for(results)
+
+
+def findings_for(results) -> tuple[Finding, ...]:
+    findings = []
     for result in results:
         if result.count:
             code = {"IQR": "numeric_outliers", "tipo textual": "broken_type",
@@ -138,6 +132,6 @@ def detect(frame: pl.DataFrame, *, ml: bool = False) -> tuple[tuple[DetectorResu
             findings.append(Finding(
                 code, "warning", f"{result.count:,} indicios por {result.method} "
                 f"sobre {result.evaluated_rows:,} filas evaluadas; revisar contexto.",
-                result.columns[0] if len(result.columns) == 1 else None,
+                result.columns[0] if len(result.columns) == 1 else None, result.examples,
             ))
-    return tuple(results), tuple(findings)
+    return tuple(findings)

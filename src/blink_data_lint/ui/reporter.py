@@ -10,6 +10,13 @@ from rich.text import Text
 from blink_data_lint.core.models import AnalysisReport, ComparisonReport
 
 
+def show_examples(examples, output):
+    for example in examples:
+        line = Text(f"  Registro {example.row:,}: ", style="dim")
+        line.append(" · ".join(f"{name}={value}" for name, value in example.values.items()))
+        output.print(line)
+
+
 def _percent(value: float | None) -> str:
     return f"{value:.1f}%" if value is not None else "n/d"
 
@@ -59,6 +66,9 @@ def show_report(
                 output.print(Panel(detail))
         output.print(Text("¹ Únicos observados: excluyen null y NaN.", style="dim"))
 
+    if any(f.examples for f in report.findings):
+        output.print(Text("Ejemplos: hasta 3 por aviso; registros desde 1, sin cabecera. No son líneas físicas del CSV. Valores truncados a 100 caracteres; duplicados/ML muestran hasta 3 columnas.", style="dim"))
+
     if report.findings:
         output.print(Text(f"\nHallazgos: {len(report.findings)}", style="bold"))
         for item in report.findings:
@@ -67,6 +77,7 @@ def show_report(
                 line.append(f" · {item.column}", style="bold")
             line.append(f": {item.message}")
             output.print(line)
+            show_examples(item.examples, output)
     else:
         output.print("Sin hallazgos en las reglas ejecutadas. Revisá la cobertura y las omisiones.")
 
@@ -85,6 +96,8 @@ def show_report(
             if result.parameters:
                 line.append("\n" + " · ".join(f"{key}={value}" for key, value in result.parameters))
             output.print(line)
+            if result.examples and not any(f.examples == result.examples for f in report.findings):
+                show_examples(result.examples, output)
 
 
 def show_comparison(

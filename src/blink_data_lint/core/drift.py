@@ -6,6 +6,8 @@ import polars as pl
 
 from blink_data_lint.core.models import DriftMetric
 from blink_data_lint.core.roles import code_like
+from blink_data_lint.core.execution import collect
+from blink_data_lint.core.progress import ProgressCallback, notify
 
 MIN_ROWS = 100
 MEAN_THRESHOLD = 0.5
@@ -123,13 +125,17 @@ def _categorical(previous: pl.Series, current: pl.Series) -> DriftMetric:
     return result(score=distance)
 
 
-def detect_drift(current: pl.DataFrame, baseline: pl.DataFrame) -> tuple[DriftMetric, ...]:
+def detect_drift(current: pl.DataFrame | pl.LazyFrame, baseline: pl.DataFrame | pl.LazyFrame, *, progress: ProgressCallback | None = None) -> tuple[DriftMetric, ...]:
     results = []
-    previous_schema = baseline.schema
-    for name, dtype in current.schema.items():
+    previous_schema = baseline.collect_schema() if isinstance(baseline, pl.LazyFrame) else baseline.schema
+    schema = current.collect_schema() if isinstance(current, pl.LazyFrame) else current.schema
+    notify(progress, "Comparando columnas", 0, len(schema))
+    for index, (name, dtype) in enumerate(schema.items()):
+        notify(progress, "Comparando columnas", index, len(schema))
         if name not in previous_schema:
             continue
-        previous, column = baseline[name], current[name]
+        previous = collect(baseline.select(name)).to_series() if isinstance(baseline, pl.LazyFrame) else baseline[name]
+        column = collect(current.select(name)).to_series() if isinstance(current, pl.LazyFrame) else current[name]
         if dtype != previous_schema[name]:
             results.append(_metric(previous, column, "distribution", 0, 0,
                                    reason="Tipos diferentes; no se convierten valores para comparar."))
@@ -144,4 +150,5 @@ def detect_drift(current: pl.DataFrame, baseline: pl.DataFrame) -> tuple[DriftMe
         else:
             results.append(_metric(previous, column, "distribution", 0, 0,
                                    reason="Tipo sin comparación de distribución implementada."))
+    notify(progress, "Comparando columnas", len(schema), len(schema))
     return tuple(results)

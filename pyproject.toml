@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "blink-data-lint"
-version = "0.1.0"
+version = "0.2.0"
 description = "Zero-config, read-only data quality diagnostics for CSV and Parquet."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,7 +25,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
-    "polars>=1.0,<2",
+    "polars>=1.44.2,<2",
     "numpy>=2.0,<3",
     "scikit-learn>=1.5,<2",
     "typer>=0.16,<1",
@@ -47,7 +47,7 @@ Issues = "https://github.com/Gianni300x/blink/issues"
 packages = ["src/blink_data_lint"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/pyproject.toml", "/README.md", "/LICENSE"]
+include = ["/src", "/tests", "/pyproject.toml", "/README.md", "/LICENSE", "/scripts/evaluate_alerts.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

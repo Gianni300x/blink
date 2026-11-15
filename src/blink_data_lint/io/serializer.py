@@ -5,7 +5,7 @@ import json
 
 from blink_data_lint.core.models import AnalysisReport, ComparisonReport, ReportSummary
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 
 def serialize_report(

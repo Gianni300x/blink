@@ -19,6 +19,7 @@ from blink_data_lint.core.duplicates import excess_duplicates
 def test_matches_exact_reference(frame):
     expected = frame.height - frame.n_unique() if frame.height and frame.width else 0
     assert excess_duplicates(frame) == expected
+    assert excess_duplicates(frame.lazy()) == expected
 
 
 def test_seeded_mixed_rows_match_reference():
@@ -29,6 +30,7 @@ def test_seeded_mixed_rows_match_reference():
         "flag": [rng.choice([None, True, False]) for _ in range(1000)],
     })
     assert excess_duplicates(frame) == frame.height - frame.n_unique()
+    assert excess_duplicates(frame.lazy()) == frame.height - frame.n_unique()
 
 
 def test_full_hash_collision_cannot_create_false_duplicates(monkeypatch):

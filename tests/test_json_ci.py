@@ -23,7 +23,7 @@ def read_document(result):
     assert "Traceback" not in result.stdout + result.stderr
     document = json.loads(result.stdout)
     assert set(document) == TOP_LEVEL_KEYS
-    assert document["schema_version"] == "1.0"
+    assert document["schema_version"] == "1.1"
     assert document["exit_code"] == result.exit_code
     return document
 
@@ -153,7 +153,7 @@ def test_json_read_errors_are_structured_and_sanitized(tmp_path, kind, baseline_
     elif kind == "corrupt":
         bad.write_text("a,b\nPRIVATE_CELL,2,3\n")
     elif kind == "encoding":
-        bad.write_bytes(b"a\n\xff\n")
+        bad.write_bytes(b"a\n\x81\n")
     args = [str(good), "--baseline", str(bad)] if baseline_error else [str(bad)]
     result = runner.invoke(app, [*args, "--json", "--exit-code"])
     document = read_document(result)
@@ -239,7 +239,7 @@ def test_unicode_and_markup_paths_are_json_data(tmp_path):
     assert document["analysis"]["columns"][0]["name"] == "[red]columna"
 
 
-def test_json_does_not_disclose_categorical_values(tmp_path):
+def test_json_examples_disclose_only_current_values_for_findings(tmp_path):
     previous = tmp_path / "previous.csv"
     current = tmp_path / "current.csv"
     pl.DataFrame({"group": ["PRIVATE_OLD"] * 100}).write_csv(previous)
@@ -247,7 +247,8 @@ def test_json_does_not_disclose_categorical_values(tmp_path):
     result = runner.invoke(app, [str(current), "--baseline", str(previous), "--json"])
     document = read_document(result)
     assert document["comparison"]["drift"][-1]["flagged"]
-    assert "PRIVATE_OLD" not in result.stdout and "PRIVATE_NEW" not in result.stdout
+    assert "PRIVATE_OLD" not in result.stdout
+    assert "PRIVATE_NEW" in result.stdout  # Ejemplo solicitado de columna constante actual.
 
 
 @pytest.mark.parametrize("arguments", [["--json"], ["--json", "--unknown"], ["data.csv", "--json", "--baseline"]])
@@ -266,3 +267,17 @@ def test_shell_redirected_json_is_parseable_with_exit_one(tmp_path):
                                 stdout=stream, stderr=subprocess.PIPE, text=True)
     assert result.returncode == 1 and result.stderr == ""
     assert json.loads(output.read_text())["summary"]["warnings"] > 0
+
+
+@pytest.mark.parametrize('error,expected', [(MemoryError, 'memoria insuficiente'), (OSError, 'almacenamiento temporal')])
+def test_resource_failures_are_clear_and_structured(tmp_path, monkeypatch, error, expected):
+    path = write_frame(tmp_path)
+    def fail(*args, **kwargs):
+        raise error('PRIVATE_CELL')
+    monkeypatch.setattr('blink_data_lint.cli.analyze', fail)
+    result = runner.invoke(app, [str(path), '--json'])
+    document = read_document(result)
+    assert result.exit_code == 2
+    assert document['status'] == 'error'
+    assert expected in document['error']['message']
+    assert 'PRIVATE_CELL' not in result.stdout + result.stderr
