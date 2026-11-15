@@ -83,12 +83,14 @@ def test_excel_csv_dialects_and_encodings_are_visible(tmp_path, separator, encod
         assert not temporary.exists()
 
 
-def test_csv_quoted_separator_and_multiline(tmp_path):
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"])
+def test_csv_quoted_separator_and_multiline(tmp_path, line_ending):
     path = tmp_path/'quoted.csv'
-    path.write_text('name;amount\n"one;two\nthree";10\n"four,five";20\n', encoding='utf-8')
+    text = 'name;amount\n"one;two\nthree";10\n"four,five";20\n'.replace('\n', line_ending)
+    path.write_bytes(text.encode('utf-8'))
     loaded = load_dataset(path)
     assert loaded.frame.shape == (2, 2)
-    assert loaded.frame[0, 'name'] == 'one;two\nthree'
+    assert loaded.frame[0, 'name'] == f'one;two{line_ending}three'
     assert 'punto y coma' in loaded.policy
 
 
@@ -125,17 +127,19 @@ def test_ambiguous_or_binary_csv_is_rejected(tmp_path, content):
         load_dataset(path)
 
 
-def test_columnar_cache_preserves_csv_values_and_record_order(tmp_path, monkeypatch):
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"])
+def test_columnar_cache_preserves_csv_values_and_record_order(tmp_path, monkeypatch, line_ending):
     import blink_data_lint.io.loader as loader
     monkeypatch.setattr(loader, 'CSV_CACHE_BYTES', 1)
     path = tmp_path/'data.csv'
-    path.write_text('name;value\n"one\ntwo";1\n"";\n;3\n"Muñoz";error\n', encoding='utf-8')
+    text = 'name;value\n"one\ntwo";1\n"";\n;3\n"Muñoz";error\n'.replace('\n', line_ending)
+    path.write_bytes(text.encode('utf-8'))
     original = path.read_bytes()
     loaded = load_dataset(path)
     temporary = Path(loaded.temporary.name)
     try:
         assert 'copia temporal local columnar' in loaded.policy
-        assert loaded.frame['name'].to_list() == ['one\ntwo', '', None, 'Muñoz']
+        assert loaded.frame['name'].to_list() == [f'one{line_ending}two', '', None, 'Muñoz']
         assert loaded.frame['value'].to_list() == ['1', None, '3', 'error']
         assert (temporary/'cache.parquet').exists()
         assert path.read_bytes() == original
