@@ -33,7 +33,7 @@ def main(
             help="Ruta de un archivo CSV o Parquet local.",
         ),
     ],
-    ml: Annotated[bool, typer.Option("--ml", help="Ejecutar IsolationForest con muestra acotada y semilla fija.")] = False,
+    ml: Annotated[bool, typer.Option("--ml", help="Análisis exploratorio con IsolationForest; indica rareza, no errores confirmados.")] = False,
     baseline: Annotated[
         Path | None,
         typer.Option(

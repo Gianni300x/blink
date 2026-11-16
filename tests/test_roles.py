@@ -62,3 +62,37 @@ def test_name_hint_is_information_not_ci_warning():
     report = analyze(pl.DataFrame({"payment_type": [1, 2] * 100, "amount": range(200)}))
     assert not any(item.severity == "warning" for item in report.findings)
     assert any(item.code == "possible_code" and item.severity == "info" for item in report.findings)
+
+
+@pytest.mark.parametrize('name', ['index', 'row_index', 'RowIndex', 'row_number', 'Unnamed: 0', '__index_level_0__'])
+@pytest.mark.parametrize('start', [0, 1])
+def test_ml_excludes_named_positional_counter(name, start):
+    frame = pl.DataFrame({name: range(start, start+100), 'amount': range(100)})
+    result = isolation_forest(frame, enabled=True)
+    assert result.columns == ('amount',)
+    assert dict(result.parameters)['contadores de fila omitidos'] == name
+    lazy_result = analyze(frame.lazy(), ml=True).detectors[-1]
+    assert lazy_result == result
+
+
+@pytest.mark.parametrize('frame', [
+    pl.DataFrame({'index': [100, 101, 103, 104]}),
+    pl.DataFrame({'index': [1, 2, None, 4]}),
+    pl.DataFrame({'index': [1, 3, 2, 4]}),
+    pl.DataFrame({'index': [1., 2., 3., 4.]}),
+    pl.DataFrame({'price_index': range(1, 100)}),
+    pl.DataFrame({'quantity': range(1, 100)}),
+])
+def test_positional_counter_heuristic_does_not_swallow_other_measures(frame):
+    from blink_data_lint.core.roles import positional_index
+    assert not positional_index(frame.to_series())
+
+
+def test_only_row_counter_is_skipped_with_reason_and_info():
+    frame = pl.DataFrame({'index': range(1, 2411)})
+    report = analyze(frame, ml=True)
+    result = report.detectors[-1]
+    assert result.count is None and result.evaluated_rows == 0
+    assert 'Contadores de fila' in result.reason
+    assert any(f.code == 'possible_row_index' and f.severity == 'info' for f in report.findings)
+    assert not any(f.code == 'isolation_outliers' for f in report.findings)

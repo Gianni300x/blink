@@ -6,7 +6,7 @@ from blink_data_lint.core.detectors import MIN_VALUES, numeric_outliers, broken_
 from blink_data_lint.core.ml import isolation_lazy
 from blink_data_lint.core.execution import collect
 from blink_data_lint.core.models import DetectorResult
-from blink_data_lint.core.roles import code_like
+from blink_data_lint.core.roles import code_like, positional_index
 from blink_data_lint.core.progress import ProgressCallback, notify
 
 
@@ -14,6 +14,7 @@ def detect_lazy(source: pl.LazyFrame, *, rows: int, metrics, ml: bool, progress:
     schema = source.collect_schema()
     results = []
     ml_columns = []
+    indices = []
     finite = None
     notify(progress, "Analizando columnas", 0, len(metrics))
     for index, metric in enumerate(metrics):
@@ -27,7 +28,9 @@ def detect_lazy(source: pl.LazyFrame, *, rows: int, metrics, ml: bool, progress:
             else:
                 column = collect(source.select(name)).to_series()
                 results.append(numeric_outliers(column))
-                if ml and metric.distinct_count > 1:
+                if ml and positional_index(column):
+                    indices.append(name)
+                elif ml and metric.distinct_count > 1:
                     finite = column.drop_nulls()
                     finite = finite.filter(finite.is_finite())
                     if len(finite) >= MIN_VALUES and finite.n_unique() > 1:
@@ -39,7 +42,7 @@ def detect_lazy(source: pl.LazyFrame, *, rows: int, metrics, ml: bool, progress:
         notify(progress, "Analizando columnas", index + 1, len(metrics))
     if ml:
         notify(progress, "Ejecutando ML")
-        result = isolation_lazy(source, rows=rows, columns=ml_columns)
+        result = isolation_lazy(source, rows=rows, columns=ml_columns, excluded_indices=indices)
     else:
         result = DetectorResult("IsolationForest", (), rows, 0, 0, None,
                                 reason="Desactivado; usar --ml para ejecutar.")

@@ -1,5 +1,7 @@
 """IsolationForest: selección acotada antes de materializar y evidencia original."""
 
+from dataclasses import replace
+
 import polars as pl
 
 from blink_data_lint.core.models import DetectorResult
@@ -40,7 +42,7 @@ def predict_sample(sample: pl.DataFrame):
     return model.fit_predict(matrix)
 
 
-def isolation_lazy(source: pl.LazyFrame, *, rows: int, columns: list[str]) -> DetectorResult:
+def isolation_lazy(source: pl.LazyFrame, *, rows: int, columns: list[str], excluded_indices=()) -> DetectorResult:
     schema = source.collect_schema()
     ml_columns = columns
     base = dict(method="IsolationForest", columns=(), total_rows=rows,
@@ -67,4 +69,9 @@ def isolation_lazy(source: pl.LazyFrame, *, rows: int, columns: list[str]) -> De
             sample = collect(eligible)
             result = score_sample(sample.select(ml_columns), base, rows=sample[row_name].to_list(),
                                   sampling="top-k hash de registro seed=42")
+    if excluded_indices:
+        detail = ", ".join(excluded_indices)
+        result = replace(result, parameters=(*result.parameters, ("contadores de fila omitidos", detail)))
+        if result.reason:
+            result = replace(result, reason=f"{result.reason} Contadores de fila omitidos de ML: {detail}.")
     return result

@@ -90,7 +90,7 @@ blink datos.parquet
 Reemplazá `datos.csv` o `datos.parquet` por la ruta de tu archivo. Si tiene
 espacios, escribila entre comillas: `blink "mis datos/ventas.csv"`.
 
-Para habilitar el análisis con ML:
+Para habilitar el análisis **exploratorio** con ML:
 
 ```bash
 blink datos.csv --ml
@@ -149,7 +149,11 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
   antes de materializar la muestra. Muestra su cobertura sin extrapolar conteos.
   La muestra se reproduce con la misma entrada y versiones de dependencias;
   puede cambiar respecto de versiones anteriores de Blink. ML detecta rareza,
-  no valida que una operación de negocio sea correcta.
+  no valida que una operación de negocio sea correcta. Su aporte depende del
+  dataset y puede repetir avisos ya detectados por las reglas. Se excluyen de ML los
+  posibles contadores de fila: columnas enteras llamadas `index`, `row_index`,
+  `row_number` y variantes habituales de exportación, sin nulos y consecutivas
+  desde 0 o 1. La omisión se informa; no se excluye cualquier medida creciente.
 - Nombres como `VendorID`, `PULocationID`, `payment_type` o `codigo_postal`
   indican posibles códigos o etiquetas. Se omiten de IQR y ML; al comparar
   archivos se usan frecuencias, no medias o distancias numéricas. Es una

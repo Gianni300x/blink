@@ -5,10 +5,10 @@ import math
 import polars as pl
 
 from blink_data_lint.core.models import DetectorResult, Finding
-from blink_data_lint.core.roles import code_like
+from blink_data_lint.core.roles import code_like, positional_index
 from blink_data_lint.core.progress import ProgressCallback, notify
 from blink_data_lint.core.evidence import series_examples
-from blink_data_lint.core.ml import ML_COLUMNS, isolation_lazy
+from blink_data_lint.core.ml import isolation_lazy
 
 MIN_VALUES = 10
 TYPE_RATIO = 0.9
@@ -93,19 +93,18 @@ def isolation_forest(frame: pl.DataFrame, *, enabled: bool) -> DetectorResult:
     if not enabled:
         return DetectorResult(**base, reason="Desactivado; usar --ml para ejecutar.")
     columns = []
+    indices = []
     for name, dtype in frame.schema.items():
         if not (dtype.is_integer() or dtype.is_float()):
+            continue
+        if positional_index(frame[name]):
+            indices.append(name)
             continue
         finite = frame[name].drop_nulls()
         finite = finite.filter(finite.is_finite())
         if len(finite) >= MIN_VALUES and finite.n_unique() > 1 and not code_like(name):
             columns.append(name)
-    if len(columns) > ML_COLUMNS:
-        return DetectorResult(**base, reason="Más de 32 columnas elegibles; trabajo ML acotado.")
-    base.update(columns=tuple(columns))
-    if not columns:
-        return DetectorResult(**base, reason="Sin columnas numéricas variables elegibles.")
-    return isolation_lazy(frame.lazy(), rows=frame.height, columns=columns)
+    return isolation_lazy(frame.lazy(), rows=frame.height, columns=columns, excluded_indices=indices)
 
 
 def detect(frame: pl.DataFrame, *, ml: bool = False, progress: ProgressCallback | None = None) -> tuple[tuple[DetectorResult, ...], tuple[Finding, ...]]:
@@ -126,6 +125,11 @@ def detect(frame: pl.DataFrame, *, ml: bool = False, progress: ProgressCallback 
 def findings_for(results) -> tuple[Finding, ...]:
     findings = []
     for result in results:
+        indices = dict(result.parameters).get("contadores de fila omitidos")
+        if indices:
+            findings.append(Finding("possible_row_index", "info",
+                                    f"Posible contador de fila omitido de ML: {indices}.",
+                                    None))
         if result.count:
             code = {"IQR": "numeric_outliers", "tipo textual": "broken_type",
                     "IsolationForest": "isolation_outliers"}[result.method]
