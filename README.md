@@ -16,8 +16,12 @@ previa, no envía datos a servicios externos y no modifica tus archivos.
 - Permite analizar anomalías con IsolationForest mediante `--ml`.
 - Compara columnas, tipos y distribuciones con un archivo anterior mediante `--baseline`.
 
-Los resultados aparecen en tablas de terminal, con conteos, cobertura y motivos
-cuando un análisis se omite. Los avisos incluyen hasta tres ejemplos con su
+El informe empieza con un resumen y los avisos que conviene revisar, antes de
+las tablas y los detalles técnicos. Con `--baseline`, el resumen incluye los
+avisos de comparación y distingue una comparación parcial o limitada de una
+que terminó sin cambios observados. Los motivos de omisión y la cobertura
+quedan en el detalle. Un aviso cuenta una regla o métrica; varios avisos pueden
+referirse a las mismas filas. Los avisos incluyen hasta tres ejemplos con su
 número de registro original y los valores observados. Son indicios para revisar
 en contexto.
 

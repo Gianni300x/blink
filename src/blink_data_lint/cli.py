@@ -14,7 +14,7 @@ from blink_data_lint.core.summary import summarize
 from blink_data_lint.io.loader import LoadError, load_dataset
 from blink_data_lint.io.serializer import serialize_error, serialize_report
 from blink_data_lint.ui.progress import WorkProgress
-from blink_data_lint.ui.reporter import show_comparison, show_report
+from blink_data_lint.ui.reporter import show_report
 
 app = typer.Typer(
     help="blink: diagnóstico rápido de calidad de datos CSV y Parquet, de solo lectura.",
@@ -105,9 +105,8 @@ def main(
             raise typer.Exit(2) from exc
         typer.echo(document)
     else:
-        show_report(report, file, format=dataset.format, policy=dataset.policy)
-        if comparison is not None and baseline is not None:
-            show_comparison(comparison, baseline)
+        show_report(report, file, format=dataset.format, policy=dataset.policy,
+                    comparison=comparison, baseline=baseline)
     if result_code:
         raise typer.Exit(result_code)
 

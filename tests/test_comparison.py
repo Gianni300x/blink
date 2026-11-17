@@ -71,7 +71,8 @@ def test_cli_same_file_and_ml_are_supported(tmp_path: Path) -> None:
     pl.DataFrame({"x": range(40)}).write_csv(path)
     result = CliRunner().invoke(app, [str(path), "--baseline", str(path), "--ml"])
     assert result.exit_code == 0, result.output
-    assert "SIN CAMBIOS DE ESQUEMA" in result.output
+    assert "COMPARACIÓN LIMITADA" in result.output
+    assert "Sin cambios de nombres o tipos de columnas." in result.output
     assert "IsolationForest" in result.output
 
 
