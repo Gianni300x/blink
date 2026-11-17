@@ -140,8 +140,10 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
   La detección usa hasta 131.072 caracteres iniciales; la cabecera completa debe
   entrar en esa muestra. Las celdas de datos pueden superar ese tamaño.
   Una estructura ambigua o inválida se rechaza. Para resolverla, exportá como
-  UTF-8 con un único separador y campos entre comillas. No se interpretan comas
-  decimales automáticamente. Las conversiones de codificación usan una copia
+  UTF-8 con un único separador y campos entre comillas. Para analizar medidas
+  numéricas, exportá con punto decimal y sin separador de miles. Si Blink detecta
+  un patrón de números con coma en el texto, lo indica en el detalle del detector.
+  Las conversiones de codificación usan una copia
   temporal local UTF-8. Esa copia y el Parquet temporal de CSV grandes se
   eliminan al terminar; necesitan espacio libre en disco.
 - IQR necesita al menos 10 valores numéricos finitos. Si el rango intercuartílico

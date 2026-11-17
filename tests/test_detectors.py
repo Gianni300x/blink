@@ -86,6 +86,12 @@ def test_type_ambiguity_and_insufficient_data_are_not_alerts(values: list, reaso
     assert result.count is None
 
 
+def test_comma_number_text_explains_omission_without_reinterpreting_values():
+    result = broken_type(pl.Series("measurement", ["12,34"] * 7 + ["-200"] * 2 + ["missing"]))
+    assert result.reason is not None and "punto decimal" in result.reason
+    assert result.count is None and result.evaluated_rows == 0
+
+
 def test_compatible_text_is_not_broken() -> None:
     assert broken_type(pl.Series("text", [str(i) for i in range(20)])).count == 0
 

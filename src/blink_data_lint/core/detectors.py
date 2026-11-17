@@ -69,6 +69,13 @@ def broken_type(series: pl.Series, *, include_examples: bool = True) -> Detector
     elif date_count / len(values) >= TYPE_RATIO:
         target, compatible = "fecha ISO YYYY-MM-DD", date_count
     else:
+        comma_numbers = values.str.contains(r"^[+-]?[0-9]+,[0-9]+$").sum()
+        if comma_numbers and not leading_zero and (numeric_count + comma_numbers) / len(values) >= TYPE_RATIO:
+            return DetectorResult(
+                **base,
+                reason="Posible coma decimal o separador de miles. La columna se conserva como texto. "
+                       "Si contiene medidas, exportá con punto decimal y sin separador de miles.",
+            )
         reason = ("Posible código con ceros iniciales; conversión numérica omitida."
                   if leading_zero and numeric_count / len(values) >= TYPE_RATIO
                   else "Sin mayoría ≥90% numérica o de fechas ISO; no se adivina intención.")
