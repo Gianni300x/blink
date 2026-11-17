@@ -25,4 +25,6 @@ def positional_index(series) -> bool:
         return False
     if series.null_count() or series[0] not in (0, 1):
         return False
+    if series[-1] != series[0] + len(series) - 1:
+        return False
     return bool((series.diff().drop_nulls() == 1).all())

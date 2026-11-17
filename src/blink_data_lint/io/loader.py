@@ -9,12 +9,14 @@ from pathlib import Path
 import shutil
 import stat
 import tempfile
+from threading import Lock
 
 import polars as pl
 
 from blink_data_lint.core.execution import collect
 
 CSV_CACHE_BYTES = 16 * 1024 * 1024
+_CSV_FIELD_LIMIT_LOCK = Lock()
 
 
 class LoadError(Exception):
@@ -121,6 +123,40 @@ def _delimiter(path: Path, encoding: str, *, separators: str = ",;\t|") -> tuple
     raise LoadError("No se pudo leer: separador ambiguo o filas inconsistentes.")
 
 
+def _validate_records(path: Path, encoding: str, separator: str, width: int, size: int) -> str:
+    """Valida registros lógicos y el salto que termina cada uno."""
+    with path.open(encoding=encoding, newline="") as source, _CSV_FIELD_LIMIT_LOCK:
+        last_line = ""
+        endings = set()
+
+        def physical_lines():
+            nonlocal last_line
+            for last_line in source:
+                yield last_line
+
+        # El límite de csv es global. Acotarlo al tamaño del archivo durante
+        # esta lectura permite campos largos sin cambiarlo para los siguientes.
+        previous_limit = csv.field_size_limit()
+        csv.field_size_limit(max(previous_limit, min(size, 2**31 - 1)))
+        try:
+            for index, row in enumerate(csv.reader(physical_lines(), delimiter=separator, strict=True)):
+                if row and len(row) != width:
+                    raise LoadError(
+                        f"No se pudo leer: registro {index} con {len(row)} campos. Se esperaban {width}."
+                    )
+                if last_line.endswith("\n"):
+                    endings.add("\n")
+                elif last_line.endswith("\r"):
+                    endings.add("\r")
+        except csv.Error as exc:
+            raise LoadError("No se pudo leer: revisá las comillas y la estructura de los registros.") from exc
+        finally:
+            csv.field_size_limit(previous_limit)
+    if len(endings) > 1:
+        raise LoadError("No se pudo leer: saltos de registro incompatibles. Reexportá con saltos LF o CRLF.")
+    return next(iter(endings), "\n")
+
+
 def load_dataset(path: Path, *, decimal_comma: bool = False) -> LoadedDataset:
     suffix = path.suffix.lower()
     temporary = None
@@ -147,6 +183,7 @@ def load_dataset(path: Path, *, decimal_comma: bool = False) -> LoadedDataset:
                     f"(columnas {listed}{extra}, desde 1). Revisá si hay encabezados vacíos "
                     "y asigná un nombre único a cada columna."
                 )
+            eol = _validate_records(path, encoding, separator, len(header), metadata.st_size)
             source = path
             if encoding not in ("utf-8", "utf-8-sig"):
                 temporary = tempfile.TemporaryDirectory(prefix="blink-csv-")
@@ -156,7 +193,7 @@ def load_dataset(path: Path, *, decimal_comma: bool = False) -> LoadedDataset:
             scan = pl.scan_csv(source, separator=separator, infer_schema_length=None,
                                try_parse_dates=False, ignore_errors=False,
                                encoding="utf8", raise_if_empty=True, glob=False,
-                               low_memory=True, new_columns=header, decimal_comma=decimal_comma)
+                               low_memory=True, new_columns=header, decimal_comma=decimal_comma, eol_char=eol)
             # Resolver el esquema valida toda la inferencia, sin cargar la tabla.
             scan.collect_schema()
             cached = metadata.st_size >= CSV_CACHE_BYTES

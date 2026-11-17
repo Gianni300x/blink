@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 import polars as pl
+from polars.selectors import by_name
 
 from blink_data_lint.core.execution import collect
 from blink_data_lint.core.progress import ProgressCallback, notify
@@ -37,7 +38,7 @@ def analyze(frame: pl.DataFrame | pl.LazyFrame, *, ml: bool = False, progress: P
     stats = {}
     for index, (name, dtype) in enumerate(schema.items()):
         column_expressions = []
-        column = pl.col(name)
+        column = by_name(name).as_expr()
         observed = column.drop_nulls()
         nan = column.is_nan().sum() if dtype.is_float() else pl.lit(0)
         if dtype.is_float():

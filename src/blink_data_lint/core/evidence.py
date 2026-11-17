@@ -1,6 +1,7 @@
 """Ejemplos acotados y posiciones originales, sin cambiar los valores de entrada."""
 
 import polars as pl
+from polars.selectors import by_name
 
 from blink_data_lint.core.models import RowExample
 from blink_data_lint.core.execution import collect, auxiliary
@@ -32,11 +33,11 @@ def finding_examples(source: pl.LazyFrame, finding, schema) -> tuple[RowExample,
     indexed = source.with_row_index(row_name, offset=1)
     if finding.code == "duplicates":
         selected = names[:3]
-        query = indexed.filter(~pl.struct(names).is_first_distinct())
+        query = indexed.filter(~pl.struct(by_name(*names)).is_first_distinct())
     elif finding.code in ("nulls", "all_null", "nan", "constant"):
         name = finding.column
         selected = [name]
-        value = pl.col(name)
+        value = by_name(name).as_expr()
         if finding.code in ("nulls", "all_null"):
             mask = value.is_null()
         elif finding.code == "nan":
@@ -48,6 +49,6 @@ def finding_examples(source: pl.LazyFrame, finding, schema) -> tuple[RowExample,
         query = indexed.filter(mask)
     else:
         return ()
-    matches = collect(query.select(row_name, *selected).head(EXAMPLES))
+    matches = collect(query.select(by_name(row_name, *selected)).head(EXAMPLES))
     return tuple(RowExample(r[row_name], {n: display(r[n]) for n in selected})
                  for r in matches.iter_rows(named=True))

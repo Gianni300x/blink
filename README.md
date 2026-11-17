@@ -86,9 +86,6 @@ entorno virtual en lugar de instalar el paquete desde PyPI.
 
 ## Uso
 
-La lectura directa de TSV y `--decimal-comma` están disponibles desde el
-código del repositorio. Para probarlas, seguí la instalación desde Git.
-
 ```bash
 blink datos.csv
 blink datos.tsv
@@ -157,6 +154,8 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
   pueden confirmarse automáticamente: comprobá los acentos de los ejemplos.
   La detección usa hasta 131.072 caracteres iniciales; la cabecera completa debe
   entrar en esa muestra. Las celdas de datos pueden superar ese tamaño.
+  Se comprueba el número de campos de todos los registros. Se aceptan saltos LF,
+  CRLF o CR. No se pueden mezclar saltos CR con LF o CRLF entre registros.
   Una estructura ambigua o inválida se rechaza. Para resolverla, exportá como
   UTF-8 con un único separador y campos entre comillas. Si Blink detecta números
   con coma en texto, lo indica en el detalle del detector. Revisá la convención
@@ -165,7 +164,8 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
   temporal local UTF-8. Esa copia y el Parquet temporal de CSV grandes se
   eliminan al terminar; necesitan espacio libre en disco.
 - IQR necesita al menos 10 valores numéricos finitos. Si el rango intercuartílico
-  es cero, se omite el detector y se indica el motivo.
+  es cero o la columna tiene enteros fuera de ±2^53, se omite el detector y se
+  indica el motivo.
 - Los tipos rotos requieren al menos 10 textos no vacíos y una mayoría ≥90 %
   de números finitos o fechas válidas `YYYY-MM-DD`. No se interpretan fechas
   locales como `01/02/2026`.

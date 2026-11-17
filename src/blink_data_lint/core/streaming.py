@@ -1,6 +1,7 @@
 """Detectores por columna y muestra ML acotada antes de materializar filas."""
 
 import polars as pl
+from polars.selectors import by_name
 
 from blink_data_lint.core.detectors import MIN_VALUES, numeric_outliers, broken_type, findings_for
 from blink_data_lint.core.ml import isolation_lazy
@@ -22,23 +23,23 @@ def detect_lazy(source: pl.LazyFrame, *, rows: int, metrics, ml: bool, progress:
         if dtype.is_integer() or dtype.is_float():
             # Las columnas etiquetadas no necesitan materializarse para omitir IQR.
             if code_like(name):
-                finite = collect(source.select(pl.col(name).is_finite().sum())).item()
+                finite = collect(source.select(by_name(name).as_expr().is_finite().sum())).item()
                 reason = "Menos de 10 valores finitos." if finite < MIN_VALUES else "Posible ID/código por nombre; no se aplica IQR a etiquetas."
                 results.append(DetectorResult("IQR", (name,), rows, finite, 0, None, reason=reason))
             else:
-                column = collect(source.select(name)).to_series()
+                column = collect(source.select(by_name(name))).to_series()
                 results.append(numeric_outliers(column, include_examples=include_examples))
                 if ml and positional_index(column):
                     indices.append(name)
                 elif ml and metric.distinct_count > 1:
-                    finite = column.drop_nulls()
+                    finite = column.rename("value").drop_nulls()
                     finite = finite.filter(finite.is_finite())
                     if len(finite) >= MIN_VALUES and finite.n_unique() > 1:
                         ml_columns.append(name)
                 del column, finite
                 finite = None
         elif dtype == pl.String:
-            results.append(broken_type(collect(source.select(name)).to_series(), include_examples=include_examples))
+            results.append(broken_type(collect(source.select(by_name(name))).to_series(), include_examples=include_examples))
         notify(progress, "Analizando columnas", index + 1, len(metrics))
     if ml:
         notify(progress, "Ejecutando ML")

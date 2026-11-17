@@ -1,6 +1,7 @@
 """Conteo exacto con prefiltrado de candidatos; los hashes no deciden igualdad."""
 
 import polars as pl
+from polars.selectors import by_name
 
 
 def excess_duplicates(frame: pl.DataFrame | pl.LazyFrame) -> int:
@@ -12,7 +13,7 @@ def excess_duplicates(frame: pl.DataFrame | pl.LazyFrame) -> int:
         names = frame.collect_schema().names()
         # Solo hashes al colectar: no materializar todas las columnas para
         # descubrir que no hay filas candidatas. La igualdad final sigue exacta.
-        hashes = collect(frame.select(pl.struct(names).hash(seed=0))).to_series()
+        hashes = collect(frame.select(pl.struct(by_name(*names)).hash(seed=0).alias("hash"))).to_series()
         indices = hashes.is_duplicated().arg_true()
         if not len(indices):
             return 0

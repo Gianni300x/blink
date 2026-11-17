@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 import polars as pl
+from polars.selectors import by_name
 
 from blink_data_lint.core.models import DetectorResult
 from blink_data_lint.core.execution import collect, auxiliary
@@ -55,8 +56,8 @@ def isolation_lazy(source: pl.LazyFrame, *, rows: int, columns: list[str], exclu
         base["columns"] = tuple(ml_columns)
         row_name = auxiliary(schema, "__blink_row")
         key_name = auxiliary([*schema, row_name], "__blink_key")
-        eligible = source.with_row_index(row_name, offset=1).select(row_name, *ml_columns).filter(
-            pl.all_horizontal(pl.col(n).is_finite().fill_null(False) for n in ml_columns))
+        eligible = source.with_row_index(row_name, offset=1).select(by_name(row_name, *ml_columns)).filter(
+            pl.all_horizontal(by_name(n).as_expr().is_finite().fill_null(False) for n in ml_columns))
         base["eligible_rows"] = collect(eligible.select(pl.len())).item()
         if base["eligible_rows"] < 32:
             result = DetectorResult(**base, reason="Menos de 32 filas completas y finitas.")
@@ -67,7 +68,7 @@ def isolation_lazy(source: pl.LazyFrame, *, rows: int, columns: list[str], exclu
                 eligible = eligible.with_columns(pl.col(row_name).hash(seed=SEED).alias(key_name))
                 eligible = eligible.sort([key_name, row_name]).head(ML_ROWS).drop(key_name)
             sample = collect(eligible)
-            result = score_sample(sample.select(ml_columns), base, rows=sample[row_name].to_list(),
+            result = score_sample(sample.select(by_name(*ml_columns)), base, rows=sample[row_name].to_list(),
                                   sampling="top-k hash de registro seed=42", include_examples=include_examples)
     if excluded_indices:
         detail = ", ".join(excluded_indices)

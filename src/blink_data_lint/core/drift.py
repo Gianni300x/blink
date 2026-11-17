@@ -3,6 +3,7 @@
 import math
 
 import polars as pl
+from polars.selectors import by_name
 
 from blink_data_lint.core.models import DriftMetric
 from blink_data_lint.core.roles import code_like
@@ -36,7 +37,7 @@ def _missing(previous: pl.Series, current: pl.Series) -> DriftMetric:
     def rate(series: pl.Series) -> float:
         missing = series.null_count()
         if series.dtype.is_float():
-            missing += series.is_nan().sum()
+            missing += series.rename("value").is_nan().sum()
         return missing / len(series)
 
     before, after = rate(previous), rate(current)
@@ -46,9 +47,9 @@ def _missing(previous: pl.Series, current: pl.Series) -> DriftMetric:
 
 
 def _numeric(previous: pl.Series, current: pl.Series) -> tuple[DriftMetric, ...]:
-    before = previous.drop_nulls()
+    before = previous.rename("value").drop_nulls()
     before = before.filter(before.is_finite())
-    after = current.drop_nulls()
+    after = current.rename("value").drop_nulls()
     after = after.filter(after.is_finite())
 
     def result(method: str, threshold: float, **kwargs) -> DriftMetric:
@@ -71,13 +72,14 @@ def _numeric(previous: pl.Series, current: pl.Series) -> tuple[DriftMetric, ...]
     new = after.cast(pl.Float64).to_numpy()
     scale = max(float(np.abs(old).max()), float(np.abs(new).max())) or 1.0
     old_scaled, new_scaled = old / scale, new / scale
-    lost_precision = (np.unique(old_scaled).size != before.n_unique()
+    baseline_distinct = before.n_unique()
+    lost_precision = (np.unique(old_scaled).size != baseline_distinct
                       or np.unique(new_scaled).size != after.n_unique())
     old_mean, new_mean = float(old_scaled.mean()), float(new_scaled.mean())
     std = float(old_scaled.std(ddof=0))
     if lost_precision:
         mean = result("mean_shift", MEAN_THRESHOLD, reason="El escalado pierde valores distintos en float64.")
-    elif std == 0:
+    elif baseline_distinct == 1 or std == 0:
         mean = result("mean_shift", MEAN_THRESHOLD, reason="Desviación del baseline cero o no representable.")
     else:
         score = abs(new_mean - old_mean) / std
@@ -103,14 +105,17 @@ def _numeric(previous: pl.Series, current: pl.Series) -> tuple[DriftMetric, ...]
 
 
 def _categorical(previous: pl.Series, current: pl.Series) -> DriftMetric:
-    before, after = previous.drop_nulls(), current.drop_nulls()
+    before = previous.rename("value").drop_nulls()
+    after = current.rename("value").drop_nulls()
+    if current.dtype.is_float():
+        before, after = before.drop_nans(), after.drop_nans()
 
     def result(**kwargs) -> DriftMetric:
         return _metric(previous, current, "total_variation", len(before), len(after),
                        threshold=DISTRIBUTION_THRESHOLD, **kwargs)
 
     if min(len(before), len(after)) < MIN_ROWS:
-        return result(reason="Menos de 100 valores no nulos en alguno de los archivos.")
+        return result(reason="Menos de 100 valores sin faltantes en alguno de los archivos.")
     if pl.concat([before, after]).n_unique() > MAX_CATEGORIES:
         return result(reason="Más de 50 categorías; posible ID o texto libre.")
     # Solo se materializan los conteos de hasta 50 categorías en Python.
@@ -134,8 +139,8 @@ def detect_drift(current: pl.DataFrame | pl.LazyFrame, baseline: pl.DataFrame | 
         notify(progress, "Comparando columnas", index, len(schema))
         if name not in previous_schema:
             continue
-        previous = collect(baseline.select(name)).to_series() if isinstance(baseline, pl.LazyFrame) else baseline[name]
-        column = collect(current.select(name)).to_series() if isinstance(current, pl.LazyFrame) else current[name]
+        previous = collect(baseline.select(by_name(name))).to_series() if isinstance(baseline, pl.LazyFrame) else baseline[name]
+        column = collect(current.select(by_name(name))).to_series() if isinstance(current, pl.LazyFrame) else current[name]
         if dtype != previous_schema[name]:
             results.append(_metric(previous, column, "distribution", 0, 0,
                                    reason="Tipos diferentes; no se convierten valores para comparar."))

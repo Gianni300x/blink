@@ -1,6 +1,7 @@
 """Detectores de solo lectura; cobertura y omisiones explícitas."""
 
 import math
+import sys
 
 import polars as pl
 
@@ -15,7 +16,9 @@ TYPE_RATIO = 0.9
 
 
 def numeric_outliers(series: pl.Series, *, include_examples: bool = True) -> DetectorResult:
-    values = series.drop_nulls()
+    # Algunas operaciones Series de Polars resuelven el nombre como expresión.
+    measurements = series.rename("value")
+    values = measurements.drop_nulls()
     values = values.filter(values.is_finite())
     base = dict(method="IQR", columns=(series.name,), total_rows=len(series),
                 eligible_rows=len(values), evaluated_rows=0, count=None)
@@ -23,10 +26,18 @@ def numeric_outliers(series: pl.Series, *, include_examples: bool = True) -> Det
         return DetectorResult(**base, reason="Menos de 10 valores finitos.")
     if code_like(series.name):
         return DetectorResult(**base, reason="Posible ID/código por nombre; no se aplica IQR a etiquetas.")
-    # Escalado evita overflow al restar extremos finitos; las comparaciones
-    # conservan el criterio IQR. Las cotas publicadas usan la escala original.
-    scale = max(abs(values.min()), abs(values.max())) or 1
-    normalized = values.cast(pl.Float64) / scale
+    # Escalar solo cuando las cotas podrían desbordar. Con magnitudes normales
+    # la división previa puede mover un valor justo en la cota por redondeo.
+    magnitude = max(abs(values.min()), abs(values.max()))
+    if values.dtype.is_integer() and magnitude > 2**53:
+        return DetectorResult(**base, reason="Enteros fuera de ±2^53; float64 podría perder precisión.")
+    extreme = magnitude > sys.float_info.max / 4 or 0 < magnitude < sys.float_info.min * 4
+    scale = magnitude if extreme else 1
+    normalized = values.cast(pl.Float64)
+    if scale != 1:
+        normalized = normalized / scale
+        if normalized.n_unique() != values.n_unique():
+            return DetectorResult(**base, reason="El escalado pierde precisión entre valores distintos.")
     q1 = normalized.quantile(0.25, interpolation="linear")
     q3 = normalized.quantile(0.75, interpolation="linear")
     spread = q3 - q1
@@ -37,8 +48,8 @@ def numeric_outliers(series: pl.Series, *, include_examples: bool = True) -> Det
     if not math.isfinite(lower) or not math.isfinite(upper):
         return DetectorResult(**base, reason="Cotas IQR fuera del rango float64.")
     # Mantener las posiciones del archivo; no numerar la serie ya filtrada.
-    original = series.cast(pl.Float64) / scale
-    mask = series.is_finite().fill_null(False) & ((original < low) | (original > high))
+    original = measurements.cast(pl.Float64) / scale
+    mask = measurements.is_finite().fill_null(False) & ((original < low) | (original > high))
     count = mask.sum()
     base.update(evaluated_rows=len(values), count=count)
     return DetectorResult(**base, examples=series_examples(series, mask) if include_examples else (), parameters=(
@@ -48,7 +59,8 @@ def numeric_outliers(series: pl.Series, *, include_examples: bool = True) -> Det
 
 
 def broken_type(series: pl.Series, *, include_examples: bool = True) -> DetectorResult:
-    values = series.drop_nulls().str.strip_chars()
+    text = series.rename("value")
+    values = text.drop_nulls().str.strip_chars()
     values = values.filter(values != "")
     base = dict(method="tipo textual", columns=(series.name,), total_rows=len(series),
                 eligible_rows=len(values), evaluated_rows=0, count=None)
@@ -80,7 +92,7 @@ def broken_type(series: pl.Series, *, include_examples: bool = True) -> Detector
                   if leading_zero and numeric_count / len(values) >= TYPE_RATIO
                   else "Sin mayoría ≥90% numérica o de fechas ISO; no se adivina intención.")
         return DetectorResult(**base, reason=reason)
-    original = series.str.strip_chars()
+    original = text.str.strip_chars()
     present = original.is_not_null() & (original != "")
     if target == "numérico finito":
         valid = original.cast(pl.Float64, strict=False).is_finite().fill_null(False)
@@ -107,7 +119,7 @@ def isolation_forest(frame: pl.DataFrame, *, enabled: bool, include_examples: bo
         if positional_index(frame[name]):
             indices.append(name)
             continue
-        finite = frame[name].drop_nulls()
+        finite = frame[name].rename("value").drop_nulls()
         finite = finite.filter(finite.is_finite())
         if len(finite) >= MIN_VALUES and finite.n_unique() > 1 and not code_like(name):
             columns.append(name)
