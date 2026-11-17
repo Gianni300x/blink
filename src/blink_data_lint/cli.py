@@ -17,7 +17,7 @@ from blink_data_lint.ui.progress import WorkProgress
 from blink_data_lint.ui.reporter import show_report
 
 app = typer.Typer(
-    help="blink: diagnóstico rápido de calidad de datos CSV y Parquet, de solo lectura.",
+    help="blink: diagnóstico rápido de calidad de datos CSV, TSV y Parquet, de solo lectura.",
     add_completion=False,
     no_args_is_help=True,
     pretty_exceptions_enable=False,
@@ -30,7 +30,7 @@ def main(
         Path,
         typer.Argument(
             metavar="FILE",
-            help="Ruta de un archivo CSV o Parquet local.",
+            help="Ruta de un archivo CSV, TSV o Parquet local.",
         ),
     ],
     ml: Annotated[bool, typer.Option("--ml", help="Análisis exploratorio con IsolationForest; indica rareza, no errores confirmados.")] = False,
@@ -38,12 +38,13 @@ def main(
         Path | None,
         typer.Option(
             "--baseline",
-            metavar="FILE", help="Comparar columnas, tipos y distribuciones con un CSV o Parquet anterior.",
+            metavar="FILE", help="Comparar columnas, tipos y distribuciones con un archivo anterior.",
         ),
     ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Emitir JSON para programas, sin tablas ni color.")] = False,
     exit_code: Annotated[bool, typer.Option("--exit-code", help="Devolver código 1 si hay avisos; útil en CI.")] = False,
     no_examples: Annotated[bool, typer.Option("--no-examples", help="Omitir ejemplos de filas y sus valores en terminal y JSON.")] = False,
+    decimal_comma: Annotated[bool, typer.Option("--decimal-comma", help="Leer con coma decimal los CSV y TSV de esta ejecución.")] = False,
 ) -> None:
     """Inspecciona salud, outliers IQR y posibles tipos rotos; --ml habilita IsolationForest."""
     sources = {
@@ -55,12 +56,12 @@ def main(
     try:
         with WorkProgress() as progress:
             progress("Leyendo archivo")
-            dataset = load_dataset(file)
+            dataset = load_dataset(file, decimal_comma=decimal_comma)
             sources["current"].update(format=dataset.format, policy=dataset.policy)
             stage = "baseline"
             if baseline is not None:
                 progress("Leyendo archivo anterior")
-            previous = load_dataset(baseline) if baseline is not None else None
+            previous = load_dataset(baseline, decimal_comma=decimal_comma) if baseline is not None else None
             if previous is not None:
                 sources["baseline"].update(format=previous.format, policy=previous.policy)
             stage = "analysis"

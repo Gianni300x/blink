@@ -80,6 +80,19 @@ def test_information_and_omissions_do_not_fail_ci(tmp_path):
     assert document["summary"] == {"warnings": 0, "information": 1, "skipped_analyses": 2}
 
 
+def test_cli_compares_tsv_and_csv_with_decimal_comma(tmp_path):
+    current = tmp_path / "actual.tsv"
+    previous = tmp_path / "anterior.csv"
+    for path, separator in ((current, "\t"), (previous, ";")):
+        path.write_text(f"valor{separator}grupo\n" + "".join(f"{i},5{separator}a\n" for i in range(120)), encoding="utf-8")
+    document = read_document(runner.invoke(app, [str(current), "--baseline", str(previous), "--decimal-comma", "--json"]))
+    assert document["status"] == "completed"
+    assert document["sources"]["current"]["format"] == "TSV"
+    assert all("coma decimal" in source["policy"] for source in document["sources"].values())
+    assert document["analysis"]["columns"][0]["dtype"] == "Float64"
+    assert not any(entry["flagged"] for entry in document["comparison"]["drift"])
+
+
 def test_small_dataset_exposes_skipped_without_claiming_zero(tmp_path):
     path = write_frame(tmp_path, values=range(9))
     result = runner.invoke(app, [str(path), "--json", "--exit-code"])

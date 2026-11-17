@@ -2,7 +2,7 @@
 
 **Un diagnóstico de calidad de datos, a un comando de distancia.**
 
-Blink es una herramienta de terminal que analiza archivos CSV y Parquet locales
+Blink es una herramienta de terminal que analiza archivos CSV, TSV y Parquet locales
 y muestra problemas de calidad e indicios de anomalías. No requiere configuración
 previa, no envía datos a servicios externos y no modifica tus archivos.
 
@@ -86,13 +86,27 @@ entorno virtual en lugar de instalar el paquete desde PyPI.
 
 ## Uso
 
+La lectura directa de TSV y `--decimal-comma` están disponibles desde el
+código del repositorio. Para probarlas, seguí la instalación desde Git.
+
 ```bash
 blink datos.csv
+blink datos.tsv
 blink datos.parquet
 ```
 
-Reemplazá `datos.csv` o `datos.parquet` por la ruta de tu archivo. Si tiene
+Reemplazá el nombre de ejemplo por la ruta de tu archivo. Si tiene
 espacios, escribila entre comillas: `blink "mis datos/ventas.csv"`.
+
+Si los números de la exportación usan coma decimal, indicá ese formato:
+
+```bash
+blink ventas.csv --decimal-comma
+```
+
+Esto lee `12,50` como `12.5`. Usalo en CSV y TSV con una sola convención
+decimal y sin separadores de miles. Si la coma también separa las columnas,
+el valor decimal tiene que estar entre comillas, como `"12,50"`.
 
 Para habilitar el análisis **exploratorio** con ML:
 
@@ -107,7 +121,10 @@ medias, distribuciones o proporción de faltantes:
 blink datos.csv --baseline anterior.csv
 ```
 
-Ambos archivos pueden ser CSV o Parquet. Se comparan columnas por nombre;
+Ambos archivos pueden ser CSV, TSV o Parquet. Si usás `--decimal-comma`,
+se aplica a ambos archivos de texto. Parquet usa los tipos que ya trae.
+Para comparar archivos de texto con distintas convenciones decimales,
+reexportalos con la misma convención. Se comparan columnas por nombre;
 un cambio de orden no genera un aviso. Los valores se comparan de forma agregada,
 sin emparejar filas. La salida muestra las métricas, umbrales y cobertura.
 
@@ -125,24 +142,25 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
 
 ## Límites de uso
 
-- Archivos locales CSV o Parquet. La lectura y los agregados se procesan por
+- Archivos locales CSV, TSV o Parquet. La lectura y los agregados se procesan por
   columnas y lotes; se relee el archivo para reducir la memoria. Los CSV de
   16 MiB o más se convierten una vez a una copia temporal local Parquet para
   evitar interpretar el texto en cada pasada; la política de lectura lo indica.
   Los conteos de únicos/duplicados y los cálculos exactos de una columna todavía necesitan
   memoria proporcional a sus datos. No se garantiza RAM constante ni capacidad
   para cualquier archivo mayor que la memoria disponible.
-- CSV requiere cabecera con nombres de columnas únicos. Se detectan coma, punto y coma, tabulador o barra `|`,
-  respetando comillas. La lectura completa valida UTF-8; se reconocen BOM UTF-8
+- CSV y TSV requieren cabecera con nombres de columnas únicos. En CSV se detectan
+  coma, punto y coma, tabulador o barra `|`. En TSV se usa tabulador.
+  Se respetan las comillas. La lectura completa valida UTF-8; se reconocen BOM UTF-8
   y UTF-16. Si UTF-8 falla, se intenta Windows-1252 y se informa como codificación
   estimada; no se reemplazan bytes ilegibles. Codificaciones indistinguibles no
   pueden confirmarse automáticamente: comprobá los acentos de los ejemplos.
   La detección usa hasta 131.072 caracteres iniciales; la cabecera completa debe
   entrar en esa muestra. Las celdas de datos pueden superar ese tamaño.
   Una estructura ambigua o inválida se rechaza. Para resolverla, exportá como
-  UTF-8 con un único separador y campos entre comillas. Para analizar medidas
-  numéricas, exportá con punto decimal y sin separador de miles. Si Blink detecta
-  un patrón de números con coma en el texto, lo indica en el detalle del detector.
+  UTF-8 con un único separador y campos entre comillas. Si Blink detecta números
+  con coma en texto, lo indica en el detalle del detector. Revisá la convención
+  del archivo antes de activar `--decimal-comma`.
   Las conversiones de codificación usan una copia
   temporal local UTF-8. Esa copia y el Parquet temporal de CSV grandes se
   eliminan al terminar; necesitan espacio libre en disco.

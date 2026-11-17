@@ -71,7 +71,7 @@ def _encoding(path: Path) -> str:
     return "cp1252"
 
 
-def _delimiter(path: Path, encoding: str) -> tuple[str, list[str]]:
+def _delimiter(path: Path, encoding: str, *, separators: str = ",;\t|") -> tuple[str, list[str]]:
     with path.open(encoding=encoding, newline="") as source:
         sample = source.read(128 * 1024)
         truncated = bool(source.read(1))
@@ -79,7 +79,7 @@ def _delimiter(path: Path, encoding: str) -> tuple[str, list[str]]:
         raise LoadError("No se pudo leer: archivo vacío.")
     candidates = []
     multiple_header = False
-    for separator in ",;\t|":
+    for separator in separators:
         text = io.StringIO(sample, newline="")
         reader = csv.reader(text, delimiter=separator, strict=True)
         header = None
@@ -121,7 +121,7 @@ def _delimiter(path: Path, encoding: str) -> tuple[str, list[str]]:
     raise LoadError("No se pudo leer: separador ambiguo o filas inconsistentes.")
 
 
-def load_dataset(path: Path) -> LoadedDataset:
+def load_dataset(path: Path, *, decimal_comma: bool = False) -> LoadedDataset:
     suffix = path.suffix.lower()
     temporary = None
     try:
@@ -130,12 +130,13 @@ def load_dataset(path: Path) -> LoadedDataset:
         except (FileNotFoundError, NotADirectoryError) as exc:
             raise LoadError("No se encontró el archivo. Revisá el nombre y la ruta.") from exc
         if stat.S_ISDIR(metadata.st_mode):
-            raise LoadError("La ruta apunta a una carpeta. Indicá un archivo .csv o .parquet dentro de ella.")
+            raise LoadError("La ruta apunta a una carpeta. Indicá un archivo .csv, .tsv o .parquet dentro de ella.")
         if not stat.S_ISREG(metadata.st_mode):
             raise LoadError("La entrada debe ser un archivo local regular.")
-        if suffix == ".csv":
+        if suffix in (".csv", ".tsv"):
             encoding = _encoding(path)
-            separator, header = _delimiter(path, encoding)
+            separators = "\t" if suffix == ".tsv" else ",;\t|"
+            separator, header = _delimiter(path, encoding, separators=separators)
             counts = Counter(header)
             if len(counts) != len(header):
                 positions = [index for index, name in enumerate(header, 1) if counts[name] > 1]
@@ -155,7 +156,7 @@ def load_dataset(path: Path) -> LoadedDataset:
             scan = pl.scan_csv(source, separator=separator, infer_schema_length=None,
                                try_parse_dates=False, ignore_errors=False,
                                encoding="utf8", raise_if_empty=True, glob=False,
-                               low_memory=True, new_columns=header)
+                               low_memory=True, new_columns=header, decimal_comma=decimal_comma)
             # Resolver el esquema valida toda la inferencia, sin cargar la tabla.
             scan.collect_schema()
             cached = metadata.st_size >= CSV_CACHE_BYTES
@@ -171,14 +172,16 @@ def load_dataset(path: Path) -> LoadedDataset:
             label = {",": "coma", ";": "punto y coma", "\t": "tabulador", "|": "barra"}[separator]
             label_encoding = encoding + (" (estimada)" if encoding == "cp1252" else "")
             policy = f"{label_encoding} · {label} · cabecera · inferencia completa · fechas como texto"
+            if decimal_comma:
+                policy += " · coma decimal"
             if cached:
                 policy += " · copia temporal local columnar"
-            return LoadedDataset(scan, "CSV", policy, temporary)
+            return LoadedDataset(scan, suffix[1:].upper(), policy, temporary)
         if suffix == ".parquet":
             scan = pl.scan_parquet(path, glob=False, low_memory=True)
             scan.collect_schema()
             return LoadedDataset(scan, "Parquet", "Esquema del archivo · lectura por columnas")
-        raise LoadError("Formato no soportado. Usá un archivo .csv o .parquet.")
+        raise LoadError("Formato no soportado. Usá un archivo .csv, .tsv o .parquet.")
     except (OSError, pl.exceptions.PolarsError, UnicodeError) as exc:
         if temporary is not None:
             temporary.cleanup()

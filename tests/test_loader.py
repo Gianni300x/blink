@@ -254,3 +254,27 @@ def test_repeated_empty_headers_report_positions(tmp_path):
     path.write_text("fecha;importe;;\n2026-11-17;2;;\n", encoding="utf-8")
     with pytest.raises(LoadError, match=r"columnas 3, 4, desde 1.*encabezados vacíos"):
         load_dataset(path)
+
+
+@pytest.mark.parametrize("suffix, separator, force_cache", [
+    (".csv", ";", False), (".csv", ",", False), (".tsv", "\t", True),
+])
+def test_decimal_comma_is_explicit_and_survives_columnar_cache(tmp_path, monkeypatch, suffix, separator, force_cache):
+    if force_cache:
+        monkeypatch.setattr("blink_data_lint.io.loader.CSV_CACHE_BYTES", 1)
+    value = '"1,25"' if separator == "," else "1,25"
+    data = f"valor{separator}nota\n{value}{separator}\"texto, literal; con barra|\"\n".encode("utf-16")
+    path = tmp_path / f"datos{suffix}"
+    path.write_bytes(data)
+    regular = load_dataset(path)
+    localized = load_dataset(path, decimal_comma=True)
+    try:
+        assert regular.frame["valor"].to_list() == ["1,25"]
+        assert localized.frame.to_dict(as_series=False) == {"valor": [1.25], "nota": ["texto, literal; con barra|"]}
+        assert localized.format == suffix[1:].upper()
+        assert "coma decimal" in localized.policy
+        assert ("copia temporal local columnar" in localized.policy) == force_cache
+        assert path.read_bytes() == data
+    finally:
+        regular.close()
+        localized.close()
