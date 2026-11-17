@@ -133,9 +133,15 @@ def findings_for(results) -> tuple[Finding, ...]:
         if result.count:
             code = {"IQR": "numeric_outliers", "tipo textual": "broken_type",
                     "IsolationForest": "isolation_outliers"}[result.method]
+            if code == "numeric_outliers":
+                detail = "valor fuera del rango habitual" if result.count == 1 else "valores fuera del rango habitual"
+                message = (f"{result.count:,} de {result.evaluated_rows:,} filas con {detail} (IQR). "
+                           "Revisá si los valores son esperados.")
+            else:
+                message = (f"{result.count:,} indicios por {result.method} "
+                           f"sobre {result.evaluated_rows:,} filas evaluadas; revisar contexto.")
             findings.append(Finding(
-                code, "warning", f"{result.count:,} indicios por {result.method} "
-                f"sobre {result.evaluated_rows:,} filas evaluadas; revisar contexto.",
+                code, "warning", message,
                 result.columns[0] if len(result.columns) == 1 else None, result.examples,
             ))
     return tuple(findings)

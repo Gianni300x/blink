@@ -247,3 +247,10 @@ def test_duplicate_header_names_have_a_clear_error(tmp_path, header):
     document = json.loads(result.stdout)
     assert document["status"] == "error" and document["analysis"] is None
     assert "nombres de columnas repetidos" in document["error"]["message"]
+
+
+def test_repeated_empty_headers_report_positions(tmp_path):
+    path = tmp_path / "export.csv"
+    path.write_text("fecha;importe;;\n2026-11-17;2;;\n", encoding="utf-8")
+    with pytest.raises(LoadError, match=r"columnas 3, 4, desde 1.*encabezados vacíos"):
+        load_dataset(path)

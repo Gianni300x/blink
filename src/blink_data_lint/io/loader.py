@@ -3,9 +3,11 @@
 import codecs
 import csv
 import io
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 import shutil
+import stat
 import tempfile
 
 import polars as pl
@@ -123,13 +125,27 @@ def load_dataset(path: Path) -> LoadedDataset:
     suffix = path.suffix.lower()
     temporary = None
     try:
-        if not path.is_file():
-            raise LoadError("La entrada debe ser un archivo local regular existente.")
+        try:
+            metadata = path.stat()
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise LoadError("No se encontró el archivo. Revisá el nombre y la ruta.") from exc
+        if stat.S_ISDIR(metadata.st_mode):
+            raise LoadError("La ruta apunta a una carpeta. Indicá un archivo .csv o .parquet dentro de ella.")
+        if not stat.S_ISREG(metadata.st_mode):
+            raise LoadError("La entrada debe ser un archivo local regular.")
         if suffix == ".csv":
             encoding = _encoding(path)
             separator, header = _delimiter(path, encoding)
-            if len(set(header)) != len(header):
-                raise LoadError("No se pudo leer: nombres de columnas repetidos en la cabecera; asigná un nombre único a cada columna.")
+            counts = Counter(header)
+            if len(counts) != len(header):
+                positions = [index for index, name in enumerate(header, 1) if counts[name] > 1]
+                listed = ", ".join(map(str, positions[:8]))
+                extra = f" y {len(positions) - 8} más" if len(positions) > 8 else ""
+                raise LoadError(
+                    f"No se pudo leer: nombres de columnas repetidos en la cabecera "
+                    f"(columnas {listed}{extra}, desde 1). Revisá si hay encabezados vacíos "
+                    "y asigná un nombre único a cada columna."
+                )
             source = path
             if encoding not in ("utf-8", "utf-8-sig"):
                 temporary = tempfile.TemporaryDirectory(prefix="blink-csv-")
@@ -142,7 +158,7 @@ def load_dataset(path: Path) -> LoadedDataset:
                                low_memory=True, new_columns=header)
             # Resolver el esquema valida toda la inferencia, sin cargar la tabla.
             scan.collect_schema()
-            cached = path.stat().st_size >= CSV_CACHE_BYTES
+            cached = metadata.st_size >= CSV_CACHE_BYTES
             if cached:
                 # Las consultas exactas necesitan varias pasadas. Convertir por
                 # lotes una vez evita volver a interpretar todo el CSV en cada
