@@ -21,7 +21,7 @@ def _percent(count: int, total: int) -> float | None:
     return count * 100 / total if total else None
 
 
-def analyze(frame: pl.DataFrame | pl.LazyFrame, *, ml: bool = False, progress: ProgressCallback | None = None) -> AnalysisReport:
+def analyze(frame: pl.DataFrame | pl.LazyFrame, *, ml: bool = False, progress: ProgressCallback | None = None, include_examples: bool = True) -> AnalysisReport:
     lazy = isinstance(frame, pl.LazyFrame)
     schema = frame.collect_schema() if lazy else frame.schema
     width = len(schema)
@@ -109,14 +109,15 @@ def analyze(frame: pl.DataFrame | pl.LazyFrame, *, ml: bool = False, progress: P
             f"{duplicates:,} filas duplicadas excedentes ({duplicates / rows:.1%}).",
         ))
     null_count = sum(column.null_count for column in columns)
-    notify(progress, "Buscando ejemplos")
-    source = frame if lazy else frame.lazy()
-    findings = [replace(f, examples=finding_examples(source, f, schema)) for f in findings]
+    if include_examples:
+        notify(progress, "Buscando ejemplos")
+        source = frame if lazy else frame.lazy()
+        findings = [replace(f, examples=finding_examples(source, f, schema)) for f in findings]
     if lazy:
         from blink_data_lint.core.streaming import detect_lazy
-        detectors, detected_findings = detect_lazy(frame, rows=rows, metrics=columns, ml=ml, progress=progress)
+        detectors, detected_findings = detect_lazy(frame, rows=rows, metrics=columns, ml=ml, progress=progress, include_examples=include_examples)
     else:
-        detectors, detected_findings = detect(frame, ml=ml, progress=progress)
+        detectors, detected_findings = detect(frame, ml=ml, progress=progress, include_examples=include_examples)
     findings.extend(detected_findings)
     return AnalysisReport(
         rows, tuple(columns), null_count, _percent(null_count, rows * width),

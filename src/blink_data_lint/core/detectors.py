@@ -14,7 +14,7 @@ MIN_VALUES = 10
 TYPE_RATIO = 0.9
 
 
-def numeric_outliers(series: pl.Series) -> DetectorResult:
+def numeric_outliers(series: pl.Series, *, include_examples: bool = True) -> DetectorResult:
     values = series.drop_nulls()
     values = values.filter(values.is_finite())
     base = dict(method="IQR", columns=(series.name,), total_rows=len(series),
@@ -41,13 +41,13 @@ def numeric_outliers(series: pl.Series) -> DetectorResult:
     mask = series.is_finite().fill_null(False) & ((original < low) | (original > high))
     count = mask.sum()
     base.update(evaluated_rows=len(values), count=count)
-    return DetectorResult(**base, examples=series_examples(series, mask), parameters=(
+    return DetectorResult(**base, examples=series_examples(series, mask) if include_examples else (), parameters=(
         ("factor", "1.5"), ("cuantiles", "lineales"),
         ("inferior", f"{lower:.12g}"), ("superior", f"{upper:.12g}"),
     ))
 
 
-def broken_type(series: pl.Series) -> DetectorResult:
+def broken_type(series: pl.Series, *, include_examples: bool = True) -> DetectorResult:
     values = series.drop_nulls().str.strip_chars()
     values = values.filter(values != "")
     base = dict(method="tipo textual", columns=(series.name,), total_rows=len(series),
@@ -81,13 +81,13 @@ def broken_type(series: pl.Series) -> DetectorResult:
         valid = (original.str.contains(r"^\d{4}-\d{2}-\d{2}$") &
                  original.str.to_date(format="%Y-%m-%d", strict=False).is_not_null()).fill_null(False)
     base.update(evaluated_rows=len(values), count=len(values) - compatible)
-    return DetectorResult(**base, examples=series_examples(series, present & ~valid), parameters=(
+    return DetectorResult(**base, examples=series_examples(series, present & ~valid) if include_examples else (), parameters=(
         ("tipo candidato", target), ("proporción mínima", "0.9"),
         ("compatibles", str(compatible)),
     ))
 
 
-def isolation_forest(frame: pl.DataFrame, *, enabled: bool) -> DetectorResult:
+def isolation_forest(frame: pl.DataFrame, *, enabled: bool, include_examples: bool = True) -> DetectorResult:
     base = dict(method="IsolationForest", columns=(), total_rows=frame.height,
                 eligible_rows=0, evaluated_rows=0, count=None)
     if not enabled:
@@ -104,21 +104,21 @@ def isolation_forest(frame: pl.DataFrame, *, enabled: bool) -> DetectorResult:
         finite = finite.filter(finite.is_finite())
         if len(finite) >= MIN_VALUES and finite.n_unique() > 1 and not code_like(name):
             columns.append(name)
-    return isolation_lazy(frame.lazy(), rows=frame.height, columns=columns, excluded_indices=indices)
+    return isolation_lazy(frame.lazy(), rows=frame.height, columns=columns, excluded_indices=indices, include_examples=include_examples)
 
 
-def detect(frame: pl.DataFrame, *, ml: bool = False, progress: ProgressCallback | None = None) -> tuple[tuple[DetectorResult, ...], tuple[Finding, ...]]:
+def detect(frame: pl.DataFrame, *, ml: bool = False, progress: ProgressCallback | None = None, include_examples: bool = True) -> tuple[tuple[DetectorResult, ...], tuple[Finding, ...]]:
     results = []
     notify(progress, "Analizando columnas", 0, frame.width)
     for index, (name, dtype) in enumerate(frame.schema.items()):
         if dtype.is_integer() or dtype.is_float():
-            results.append(numeric_outliers(frame[name]))
+            results.append(numeric_outliers(frame[name], include_examples=include_examples))
         elif dtype == pl.String:
-            results.append(broken_type(frame[name]))
+            results.append(broken_type(frame[name], include_examples=include_examples))
         notify(progress, "Analizando columnas", index + 1, frame.width)
     if ml:
         notify(progress, "Ejecutando ML")
-    results.append(isolation_forest(frame, enabled=ml))
+    results.append(isolation_forest(frame, enabled=ml, include_examples=include_examples))
     return tuple(results), findings_for(results)
 
 

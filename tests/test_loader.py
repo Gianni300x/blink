@@ -1,4 +1,6 @@
 from pathlib import Path
+import csv
+import io
 
 import polars as pl
 import pytest
@@ -169,3 +171,79 @@ def test_cache_disk_failure_is_sanitized_and_cleaned(tmp_path, monkeypatch):
     assert result.exit_code == 2
     assert 'PRIVATE_VALUE' not in result.stdout + result.stderr
     assert directories and all(not p.exists() for p in directories)
+
+
+@pytest.mark.parametrize("separator", [",", ";", "\t", "|"])
+@pytest.mark.parametrize("kind", ["separators_in_header", "escaped_header", "long_cell", "single_column"])
+def test_csv_stress_regressions_preserve_names_values_and_rows(tmp_path, separator, kind):
+    names = ["name", "amount"]
+    rows = [["Peña", "1"], ["Muñoz", "2"]]
+    if kind == "separators_in_header":
+        names = ["name;with|separators", "amount"]
+        rows = [["a,b;c|d", "1"], ["one\ntwo", "2"]]
+    elif kind == "escaped_header":
+        names = ['say "hello"', "amount"]
+        rows = [['"quoted"', "1"], ["other", "2"]]
+    elif kind == "long_cell":
+        rows = [["x" * 150000, "1"], ["tail", "2"]]
+    else:
+        names = ["single"]
+        rows = [["a,b;c|d"], ["one\ntwo"], ["Peña"]]
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, delimiter=separator)
+    writer.writerow(names)
+    writer.writerows(rows)
+    path = tmp_path / "data.csv"
+    path.write_bytes(output.getvalue().encode("utf-8"))
+    before = path.read_bytes()
+    loaded = load_dataset(path)
+    try:
+        frame = loaded.frame
+        assert frame.columns == names
+        assert frame.height == len(rows)
+        assert frame[names[0]].to_list() == [row[0] for row in rows]
+    finally:
+        loaded.close()
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("content", [
+    'a,b\n1,2,3\n', 'a;b\n1;2;3\n',
+    'a,b;c\n1,2;3\n', 'a,b\n"unterminated,1\n',
+])
+def test_dialect_detection_does_not_hide_corruption_as_one_column(tmp_path, content):
+    path = tmp_path / "invalid.csv"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(LoadError):
+        load_dataset(path)
+
+
+def test_multiple_consistent_separators_remain_ambiguous(tmp_path):
+    path = tmp_path / "ambiguous.csv"
+    path.write_text("name;with|separators\tamount\na,b;c|d\t1\na,b;c|d\t2\n", encoding="utf-8")
+    with pytest.raises(LoadError, match="ambiguo"):
+        load_dataset(path)
+
+
+def test_header_beyond_detection_sample_is_not_silently_truncated(tmp_path):
+    path = tmp_path / "header.csv"
+    path.write_text("x" * 150000 + ",amount\na,1\n", encoding="utf-8")
+    with pytest.raises(LoadError, match="cabecera mayor"):
+        load_dataset(path)
+
+
+@pytest.mark.parametrize("header", ["a,a", '"say ""hi""","say ""hi"""'])
+def test_duplicate_header_names_have_a_clear_error(tmp_path, header):
+    from blink_data_lint.cli import app
+    from typer.testing import CliRunner
+    import json
+
+    path = tmp_path / "duplicates.csv"
+    path.write_text(header + "\n1,2\n", encoding="utf-8")
+    with pytest.raises(LoadError, match="nombres de columnas repetidos"):
+        load_dataset(path)
+    result = CliRunner().invoke(app, [str(path), "--json"])
+    assert result.exit_code == 2
+    document = json.loads(result.stdout)
+    assert document["status"] == "error" and document["analysis"] is None
+    assert "nombres de columnas repetidos" in document["error"]["message"]

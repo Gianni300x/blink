@@ -47,7 +47,7 @@ Issues = "https://github.com/Gianni300x/blink/issues"
 packages = ["src/blink_data_lint"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/pyproject.toml", "/README.md", "/LICENSE", "/scripts/evaluate_alerts.py", "/scripts/evaluate_public_data.py", "/scripts/evaluate_dirty_clean.py", "/scripts/evaluate_numeric_cases.py"]
+include = ["/src", "/tests", "/pyproject.toml", "/README.md", "/LICENSE", "/scripts/evaluate_alerts.py", "/scripts/evaluate_public_data.py", "/scripts/evaluate_dirty_clean.py", "/scripts/evaluate_numeric_cases.py", "/scripts/stress_cli.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

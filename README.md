@@ -132,11 +132,13 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
   Los conteos de únicos/duplicados y los cálculos exactos de una columna todavía necesitan
   memoria proporcional a sus datos. No se garantiza RAM constante ni capacidad
   para cualquier archivo mayor que la memoria disponible.
-- CSV requiere cabecera. Se detectan coma, punto y coma, tabulador o barra `|`,
+- CSV requiere cabecera con nombres de columnas únicos. Se detectan coma, punto y coma, tabulador o barra `|`,
   respetando comillas. La lectura completa valida UTF-8; se reconocen BOM UTF-8
   y UTF-16. Si UTF-8 falla, se intenta Windows-1252 y se informa como codificación
   estimada; no se reemplazan bytes ilegibles. Codificaciones indistinguibles no
   pueden confirmarse automáticamente: comprobá los acentos de los ejemplos.
+  La detección usa hasta 131.072 caracteres iniciales; la cabecera completa debe
+  entrar en esa muestra. Las celdas de datos pueden superar ese tamaño.
   Una estructura ambigua o inválida se rechaza. Para resolverla, exportá como
   UTF-8 con un único separador y campos entre comillas. No se interpretan comas
   decimales automáticamente. Las conversiones de codificación usan una copia
@@ -206,6 +208,18 @@ como dos avisos. Un aviso sigue siendo un indicio para revisar en contexto.
 
 Los informes de terminal y JSON incluyen pequeños extractos de tus datos locales;
 consideralo antes de compartirlos o guardarlos en logs de CI.
+
+Para omitir esos ejemplos de filas y sus valores:
+
+```bash
+blink datos.csv --no-examples
+blink datos.csv --json --no-examples > informe.json
+```
+
+Se mantienen los avisos, conteos, nombres de columnas, rutas y métricas como
+los umbrales IQR o los agregados de comparación. Esta opción no anonimiza
+el informe completo ni modifica el análisis. También funciona con `--ml`,
+`--baseline` y `--exit-code`. En JSON, los campos `examples` quedan vacíos.
 
 El JSON usa `schema_version: "1.1"` e incluye `analysis`, `comparison`, `summary`,
 `error` y `exit_code`, además de los archivos y políticas de lectura en `sources`.

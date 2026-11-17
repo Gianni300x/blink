@@ -2,6 +2,7 @@
 
 import codecs
 import csv
+import io
 from dataclasses import dataclass
 from pathlib import Path
 import shutil
@@ -68,24 +69,54 @@ def _encoding(path: Path) -> str:
     return "cp1252"
 
 
-def _delimiter(path: Path, encoding: str) -> str:
+def _delimiter(path: Path, encoding: str) -> tuple[str, list[str]]:
     with path.open(encoding=encoding, newline="") as source:
         sample = source.read(128 * 1024)
+        truncated = bool(source.read(1))
     if not sample:
         raise LoadError("No se pudo leer: archivo vacío.")
-    header = sample.splitlines()[0]
-    candidates = [d for d in ",;\t|" if len(next(csv.reader([header], delimiter=d))) > 1]
-    if len(candidates) > 1:
+    candidates = []
+    multiple_header = False
+    for separator in ",;\t|":
+        text = io.StringIO(sample, newline="")
+        reader = csv.reader(text, delimiter=separator, strict=True)
+        header = None
+        widths = []
+        try:
+            header = next(reader)
+            if truncated and text.tell() == len(sample) and not sample.endswith(("\r", "\n")):
+                raise LoadError("No se pudo leer: cabecera mayor que la muestra de detección de 131.072 caracteres; acortá los nombres de columnas.")
+            multiple_header |= len(header) > 1
+            # Retener solo anchuras: la muestra no es evidencia para el informe.
+            for row in reader:
+                if row:
+                    widths.append(len(row))
+        except StopIteration:
+            continue
+        except csv.Error as exc:
+            # Una muestra cortada puede terminar dentro de una celda o superar
+            # el límite del parser de Python. Polars valida el archivo completo.
+            if not truncated or header is None or not (
+                "unexpected end of data" in str(exc) or "field larger" in str(exc)
+            ):
+                continue
+        else:
+            # La última fila de una muestra cortada tampoco está completa aunque
+            # no tenga comillas. No usarla para descartar el separador correcto.
+            if truncated and widths:
+                widths.pop()
+        if header and all(width == len(header) for width in widths):
+            candidates.append((separator, header))
+    multiple = [item for item in candidates if len(item[1]) > 1]
+    if len(multiple) == 1:
+        return multiple[0]
+    if len(multiple) > 1:
         raise LoadError("No se pudo leer: separador ambiguo en la cabecera; exportá con un único separador y campos entre comillas.")
-    try:
-        return csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
-    except csv.Error:
-        # Si no hay separadores fuera de comillas en la cabecera, puede ser
-        # una columna legítima. Una estructura inconsistente no se reinterpreta.
-        header = sample.splitlines()[0]
-        if all(len(next(csv.reader([header], delimiter=d))) == 1 for d in ",;\t|"):
-            return ","
-        raise LoadError("No se pudo leer: separador ambiguo o filas inconsistentes.")
+    # Una sola columna puede contener comas literales en un CSV de tabuladores.
+    # Elegir una lectura coherente de una columna, sin dividir sus valores.
+    if candidates and not multiple_header:
+        return candidates[0]
+    raise LoadError("No se pudo leer: separador ambiguo o filas inconsistentes.")
 
 
 def load_dataset(path: Path) -> LoadedDataset:
@@ -96,7 +127,9 @@ def load_dataset(path: Path) -> LoadedDataset:
             raise LoadError("La entrada debe ser un archivo local regular existente.")
         if suffix == ".csv":
             encoding = _encoding(path)
-            separator = _delimiter(path, encoding)
+            separator, header = _delimiter(path, encoding)
+            if len(set(header)) != len(header):
+                raise LoadError("No se pudo leer: nombres de columnas repetidos en la cabecera; asigná un nombre único a cada columna.")
             source = path
             if encoding not in ("utf-8", "utf-8-sig"):
                 temporary = tempfile.TemporaryDirectory(prefix="blink-csv-")
@@ -106,7 +139,7 @@ def load_dataset(path: Path) -> LoadedDataset:
             scan = pl.scan_csv(source, separator=separator, infer_schema_length=None,
                                try_parse_dates=False, ignore_errors=False,
                                encoding="utf8", raise_if_empty=True, glob=False,
-                               low_memory=True)
+                               low_memory=True, new_columns=header)
             # Resolver el esquema valida toda la inferencia, sin cargar la tabla.
             scan.collect_schema()
             cached = path.stat().st_size >= CSV_CACHE_BYTES

@@ -13,13 +13,13 @@ ML_COLUMNS = 32
 SEED = 42
 
 
-def score_sample(sample: pl.DataFrame, base: dict, *, rows: list[int], sampling: str = "top-k hash de registro seed=42") -> DetectorResult:
+def score_sample(sample: pl.DataFrame, base: dict, *, rows: list[int], sampling: str = "top-k hash de registro seed=42", include_examples: bool = True) -> DetectorResult:
     predictions = predict_sample(sample)
     if predictions is None:
         return DetectorResult(**base, reason="Sin variación representable en la muestra float32.")
     count = int((predictions == -1).sum())
     base.update(evaluated_rows=sample.height, count=count)
-    examples = frame_examples(sample, (predictions == -1).nonzero()[0].tolist(), rows)
+    examples = frame_examples(sample, (predictions == -1).nonzero()[0].tolist(), rows) if include_examples else ()
     return DetectorResult(**base, examples=examples, parameters=(
         ("muestreo", sampling), ("seed", str(SEED)), ("árboles", "64"), ("max_samples", str(min(256, sample.height))),
         ("límite de filas", str(ML_ROWS)), ("límite de columnas", str(ML_COLUMNS)),
@@ -42,7 +42,7 @@ def predict_sample(sample: pl.DataFrame):
     return model.fit_predict(matrix)
 
 
-def isolation_lazy(source: pl.LazyFrame, *, rows: int, columns: list[str], excluded_indices=()) -> DetectorResult:
+def isolation_lazy(source: pl.LazyFrame, *, rows: int, columns: list[str], excluded_indices=(), include_examples: bool = True) -> DetectorResult:
     schema = source.collect_schema()
     ml_columns = columns
     base = dict(method="IsolationForest", columns=(), total_rows=rows,
@@ -68,7 +68,7 @@ def isolation_lazy(source: pl.LazyFrame, *, rows: int, columns: list[str], exclu
                 eligible = eligible.sort([key_name, row_name]).head(ML_ROWS).drop(key_name)
             sample = collect(eligible)
             result = score_sample(sample.select(ml_columns), base, rows=sample[row_name].to_list(),
-                                  sampling="top-k hash de registro seed=42")
+                                  sampling="top-k hash de registro seed=42", include_examples=include_examples)
     if excluded_indices:
         detail = ", ".join(excluded_indices)
         result = replace(result, parameters=(*result.parameters, ("contadores de fila omitidos", detail)))

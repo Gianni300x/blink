@@ -43,6 +43,7 @@ def main(
     ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Emitir JSON para programas, sin tablas ni color.")] = False,
     exit_code: Annotated[bool, typer.Option("--exit-code", help="Devolver código 1 si hay avisos; útil en CI.")] = False,
+    no_examples: Annotated[bool, typer.Option("--no-examples", help="Omitir ejemplos de filas y sus valores en terminal y JSON.")] = False,
 ) -> None:
     """Inspecciona salud, outliers IQR y posibles tipos rotos; --ml habilita IsolationForest."""
     sources = {
@@ -63,7 +64,7 @@ def main(
             if previous is not None:
                 sources["baseline"].update(format=previous.format, policy=previous.policy)
             stage = "analysis"
-            report = analyze(dataset.scan, ml=ml, progress=progress)
+            report = analyze(dataset.scan, ml=ml, progress=progress, include_examples=not no_examples)
             comparison = compare(dataset.scan, previous.scan, progress=progress) if previous is not None else None
     except LoadError as exc:
         reading = "baseline" if stage == "baseline" else "archivo actual"

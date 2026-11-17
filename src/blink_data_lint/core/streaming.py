@@ -10,7 +10,7 @@ from blink_data_lint.core.roles import code_like, positional_index
 from blink_data_lint.core.progress import ProgressCallback, notify
 
 
-def detect_lazy(source: pl.LazyFrame, *, rows: int, metrics, ml: bool, progress: ProgressCallback | None = None):
+def detect_lazy(source: pl.LazyFrame, *, rows: int, metrics, ml: bool, progress: ProgressCallback | None = None, include_examples: bool = True):
     schema = source.collect_schema()
     results = []
     ml_columns = []
@@ -27,7 +27,7 @@ def detect_lazy(source: pl.LazyFrame, *, rows: int, metrics, ml: bool, progress:
                 results.append(DetectorResult("IQR", (name,), rows, finite, 0, None, reason=reason))
             else:
                 column = collect(source.select(name)).to_series()
-                results.append(numeric_outliers(column))
+                results.append(numeric_outliers(column, include_examples=include_examples))
                 if ml and positional_index(column):
                     indices.append(name)
                 elif ml and metric.distinct_count > 1:
@@ -38,11 +38,11 @@ def detect_lazy(source: pl.LazyFrame, *, rows: int, metrics, ml: bool, progress:
                 del column, finite
                 finite = None
         elif dtype == pl.String:
-            results.append(broken_type(collect(source.select(name)).to_series()))
+            results.append(broken_type(collect(source.select(name)).to_series(), include_examples=include_examples))
         notify(progress, "Analizando columnas", index + 1, len(metrics))
     if ml:
         notify(progress, "Ejecutando ML")
-        result = isolation_lazy(source, rows=rows, columns=ml_columns, excluded_indices=indices)
+        result = isolation_lazy(source, rows=rows, columns=ml_columns, excluded_indices=indices, include_examples=include_examples)
     else:
         result = DetectorResult("IsolationForest", (), rows, 0, 0, None,
                                 reason="Desactivado; usar --ml para ejecutar.")
