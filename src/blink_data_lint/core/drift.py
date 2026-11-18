@@ -7,7 +7,7 @@ from polars.selectors import by_name
 
 from blink_data_lint.core.models import DriftMetric
 from blink_data_lint.core.roles import code_like
-from blink_data_lint.core.execution import collect
+from blink_data_lint.core.execution import collect, count_rows
 from blink_data_lint.core.progress import ProgressCallback, notify
 
 MIN_ROWS = 100
@@ -29,10 +29,18 @@ def _metric(
                        previous_value, current_value)
 
 
+def _missing_metric(name: str, baseline_rows: int, current_rows: int,
+                    before: float | None = None, after: float | None = None) -> DriftMetric:
+    if before is None or after is None:
+        return DriftMetric(name, "missing_rate", baseline_rows, current_rows, baseline_rows, current_rows,
+                           None, MISSING_THRESHOLD, "Menos de 100 filas en alguno de los archivos.")
+    return DriftMetric(name, "missing_rate", baseline_rows, current_rows, baseline_rows, current_rows,
+                       abs(after - before), MISSING_THRESHOLD, None, before, after)
+
+
 def _missing(previous: pl.Series, current: pl.Series) -> DriftMetric:
     if min(len(previous), len(current)) < MIN_ROWS:
-        return _metric(previous, current, "missing_rate", len(previous), len(current),
-                       threshold=MISSING_THRESHOLD, reason="Menos de 100 filas en alguno de los archivos.")
+        return _missing_metric(current.name, len(previous), len(current))
 
     def rate(series: pl.Series) -> float:
         missing = series.null_count()
@@ -41,9 +49,35 @@ def _missing(previous: pl.Series, current: pl.Series) -> DriftMetric:
         return missing / len(series)
 
     before, after = rate(previous), rate(current)
-    return _metric(previous, current, "missing_rate", len(previous), len(current),
-                   score=abs(after - before), threshold=MISSING_THRESHOLD,
-                   previous_value=before, current_value=after)
+    return _missing_metric(current.name, len(previous), len(current), before, after)
+
+
+def _null_count(frame: pl.DataFrame | pl.LazyFrame, name: str) -> int:
+    if isinstance(frame, pl.LazyFrame):
+        return collect(frame.select(by_name(name).as_expr().null_count())).item()
+    return frame[name].null_count()
+
+
+def _ks_distance(old, new) -> float:
+    import numpy as np
+
+    old_sorted, new_sorted = np.sort(old), np.sort(new)
+    distance = 0.0
+    # La diferencia dirigida solo aumenta al saltar la CDF propia. La posición
+    # final de cada grupo de empates ya da su conteo acumulado, incluso si el
+    # grupo cruza varios bloques. Solo se busca el rango en la otra muestra.
+    for values, other in ((old_sorted, new_sorted), (new_sorted, old_sorted)):
+        last = len(values) - 1
+        for offset in range(0, last, CDF_CHUNK_ROWS):
+            end = min(offset + CDF_CHUNK_ROWS, last)
+            ends = offset + np.flatnonzero(values[offset:end] != values[offset + 1:end + 1])
+            if ends.size:
+                delta = (ends + 1) / len(values)
+                delta -= np.searchsorted(other, values[ends], side="right") / len(other)
+                distance = max(distance, float(delta.max()))
+        other_count = np.searchsorted(other, values[last], side="right")
+        distance = max(distance, float(1 - other_count / len(other)))
+    return distance
 
 
 def _numeric(previous: pl.Series, current: pl.Series) -> tuple[DriftMetric, ...]:
@@ -89,19 +123,7 @@ def _numeric(previous: pl.Series, current: pl.Series) -> tuple[DriftMetric, ...]
             mean = result("mean_shift", MEAN_THRESHOLD, score=score,
                           previous_value=old_mean * scale, current_value=new_mean * scale)
 
-    # Distancia empírica exacta: evaluar ambas CDF a la derecha de cada valor
-    # observado contempla empates y tamaños distintos, sin p-valores ni muestreo.
-    old_sorted, new_sorted = np.sort(old), np.sort(new)
-    distance = 0.0
-    # Recorrer todo el soporte en bloques, sin construir la unión ni dos CDF
-    # completas. Es el mismo máximo exacto, no una muestra de observaciones.
-    for values in (old_sorted, new_sorted):
-        for offset in range(0, len(values), CDF_CHUNK_ROWS):
-            support = np.unique(values[offset:offset + CDF_CHUNK_ROWS])
-            delta = np.searchsorted(new_sorted, support, side="right") / len(new_sorted)
-            delta -= np.searchsorted(old_sorted, support, side="right") / len(old_sorted)
-            distance = max(distance, float(np.max(np.abs(delta))))
-    return mean, result("ks", DISTRIBUTION_THRESHOLD, score=distance)
+    return mean, result("ks", DISTRIBUTION_THRESHOLD, score=_ks_distance(old, new))
 
 
 def _categorical(previous: pl.Series, current: pl.Series) -> DriftMetric:
@@ -130,7 +152,9 @@ def _categorical(previous: pl.Series, current: pl.Series) -> DriftMetric:
     return result(score=distance)
 
 
-def detect_drift(current: pl.DataFrame | pl.LazyFrame, baseline: pl.DataFrame | pl.LazyFrame, *, progress: ProgressCallback | None = None) -> tuple[DriftMetric, ...]:
+def detect_drift(current: pl.DataFrame | pl.LazyFrame, baseline: pl.DataFrame | pl.LazyFrame, *,
+                 progress: ProgressCallback | None = None,
+                 row_counts: tuple[int, int] | None = None) -> tuple[DriftMetric, ...]:
     results = []
     previous_schema = baseline.collect_schema() if isinstance(baseline, pl.LazyFrame) else baseline.schema
     schema = current.collect_schema() if isinstance(current, pl.LazyFrame) else current.schema
@@ -139,21 +163,30 @@ def detect_drift(current: pl.DataFrame | pl.LazyFrame, baseline: pl.DataFrame | 
         notify(progress, "Comparando columnas", index, len(schema))
         if name not in previous_schema:
             continue
+        numeric = dtype.is_integer() or dtype.is_float()
+        type_changed = dtype != previous_schema[name]
+        if type_changed or (not numeric and dtype not in (pl.String, pl.Boolean)):
+            if row_counts is None:
+                row_counts = count_rows(baseline), count_rows(current)
+            baseline_rows, current_rows = row_counts
+            if type_changed:
+                reason = "Tipos diferentes; no se convierten valores para comparar."
+            else:
+                if min(baseline_rows, current_rows) >= MIN_ROWS:
+                    before = _null_count(baseline, name) / baseline_rows
+                    after = _null_count(current, name) / current_rows
+                    results.append(_missing_metric(name, baseline_rows, current_rows, before, after))
+                else:
+                    results.append(_missing_metric(name, baseline_rows, current_rows))
+                reason = "Tipo sin comparación de distribución implementada."
+            results.append(DriftMetric(name, "distribution", baseline_rows, current_rows, 0, 0, None, None, reason))
+            continue
         previous = collect(baseline.select(by_name(name))).to_series() if isinstance(baseline, pl.LazyFrame) else baseline[name]
         column = collect(current.select(by_name(name))).to_series() if isinstance(current, pl.LazyFrame) else current[name]
-        if dtype != previous_schema[name]:
-            results.append(_metric(previous, column, "distribution", 0, 0,
-                                   reason="Tipos diferentes; no se convierten valores para comparar."))
-            continue
         results.append(_missing(previous, column))
-        if (dtype.is_integer() or dtype.is_float()) and code_like(name):
-            results.append(_categorical(previous, column))
-        elif dtype.is_integer() or dtype.is_float():
+        if numeric and not code_like(name):
             results.extend(_numeric(previous, column))
-        elif dtype in (pl.String, pl.Boolean):
-            results.append(_categorical(previous, column))
         else:
-            results.append(_metric(previous, column, "distribution", 0, 0,
-                                   reason="Tipo sin comparación de distribución implementada."))
+            results.append(_categorical(previous, column))
     notify(progress, "Comparando columnas", len(schema), len(schema))
     return tuple(results)

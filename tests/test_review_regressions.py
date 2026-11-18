@@ -32,6 +32,23 @@ def test_tsv_with_cr_delimiter_preserves_newlines_inside_quoted_values(tmp_path)
         loaded.close()
 
 
+def test_csv_switches_to_quoted_records_after_delimiter_sample(tmp_path):
+    path = tmp_path / "late-quote.csv"
+    prefix = b"a,b\r\n" + b"1,2\r\n" * 27000
+    path.write_bytes(prefix + b'3,"line, one\r\nline two"\r\n')
+    loaded = load_dataset(path)
+    try:
+        assert loaded.frame.shape == (27001, 2)
+        assert loaded.frame[-1, "b"] == "line, one\r\nline two"
+    finally:
+        loaded.close()
+    with path.open("ab") as output:
+        output.write(b"4\r\n")
+    invocation = CliRunner().invoke(app, [str(path), "--json"])
+    assert invocation.exit_code == 2
+    assert "registro 27002" in json.loads(invocation.stdout)["error"]["message"]
+
+
 @pytest.mark.parametrize("suffix,separator", [("csv", b","), ("tsv", b"\t")])
 def test_short_record_is_rejected_past_delimiter_sample(tmp_path, suffix, separator):
     path = tmp_path / f"ventas.{suffix}"
@@ -40,6 +57,16 @@ def test_short_record_is_rejected_past_delimiter_sample(tmp_path, suffix, separa
     assert invocation.exit_code == 2
     document = json.loads(invocation.stdout)
     assert document["status"] == "error" and document["analysis"] is None
+
+
+@pytest.mark.parametrize("suffix,separator", [("csv", ","), ("tsv", "\t")])
+def test_short_record_inside_sample_reports_width_and_position(tmp_path, suffix, separator):
+    path = tmp_path / f"early.{suffix}"
+    path.write_text(f"a{separator}b\n1{separator}2\n3\n", encoding="utf-8")
+    invocation = CliRunner().invoke(app, [str(path), "--json"])
+    assert invocation.exit_code == 2
+    message = json.loads(invocation.stdout)["error"]["message"]
+    assert "registro 2. Campos encontrados: 1. Esperados: 2." in message
 
 
 def test_baseline_with_extra_field_reports_read_error(tmp_path):
@@ -131,3 +158,9 @@ def test_zero_terminal_width_still_produces_a_text_report(tmp_path):
     invocation = CliRunner().invoke(app, [str(path)], env={"COLUMNS": "0"})
     assert invocation.exit_code == 0
     assert "2 filas" in invocation.stdout
+
+
+def test_zero_terminal_width_still_produces_a_read_error(tmp_path):
+    invocation = CliRunner().invoke(app, [str(tmp_path / "missing.csv")], env={"COLUMNS": "0"})
+    assert invocation.exit_code == 2
+    assert "No se encontró el archivo" in invocation.stderr

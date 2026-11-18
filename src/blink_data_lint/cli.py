@@ -5,7 +5,6 @@ from typing import Annotated
 
 import typer
 from polars.exceptions import PolarsError
-from rich.console import Console
 from rich.text import Text
 
 from blink_data_lint.core.analyzer import analyze
@@ -14,7 +13,7 @@ from blink_data_lint.core.summary import summarize
 from blink_data_lint.io.loader import LoadError, load_dataset
 from blink_data_lint.io.serializer import serialize_error, serialize_report
 from blink_data_lint.ui.progress import WorkProgress
-from blink_data_lint.ui.reporter import show_report
+from blink_data_lint.ui.reporter import report_console, show_report
 
 app = typer.Typer(
     help="blink: diagnóstico rápido de calidad de datos CSV, TSV y Parquet, de solo lectura.",
@@ -119,7 +118,7 @@ def _show_error(message: str, *, sources: dict, code: str, stage: str, json_outp
         typer.echo(serialize_error(sources=sources, code=code, stage=stage, message=message))
         typer.echo(message, err=True)
     else:
-        Console(stderr=True).print(Text(message, style="red"))
+        report_console(stderr=True).print(Text(message, style="red"))
 
 
 if __name__ == "__main__":

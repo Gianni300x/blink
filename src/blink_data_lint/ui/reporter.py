@@ -26,10 +26,10 @@ def _quantity(count, noun):
     return f"{count:,} {noun}{'s' if count != 1 else ''}"
 
 
-def _report_console(console: Console | None) -> Console:
+def report_console(console: Console | None = None, *, stderr: bool = False) -> Console:
     if console is not None:
         return console
-    output = Console()
+    output = Console(stderr=stderr)
     if output.width <= 0:
         output.width = 80
     return output
@@ -40,7 +40,7 @@ def show_report(
     console: Console | None = None, comparison: ComparisonReport | None = None,
     baseline: Path | None = None,
 ) -> None:
-    output = _report_console(console)
+    output = report_console(console)
     totals = summarize(report, comparison)
     warnings = sum(item.severity == "warning" for item in report.findings)
     if totals.warnings:
@@ -169,7 +169,7 @@ def show_comparison(
     report: ComparisonReport, baseline: Path | None, *, console: Console | None = None,
     details: bool = True,
 ) -> None:
-    output = _report_console(console)
+    output = report_console(console)
     summary = Text()
     summary.append("Archivo anterior: ", style="bold")
     summary.append(str(baseline) if baseline is not None else "referencia de comparación")

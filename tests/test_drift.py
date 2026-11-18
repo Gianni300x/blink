@@ -74,6 +74,16 @@ def test_ks_chunk_boundaries_preserve_the_exact_statistic() -> None:
     assert result.score == pytest.approx(ks_2samp(previous, current, method="asymp").statistic, abs=1e-15)
 
 
+def test_ks_ties_crossing_blocks_and_maximum_at_last_value(monkeypatch) -> None:
+    monkeypatch.setattr("blink_data_lint.core.drift.CDF_CHUNK_ROWS", 7)
+    before = pl.DataFrame({"x": [0] * 120 + [1] * 80})
+    after = pl.DataFrame({"x": [0] * 30 + [1] * 45 + [2] * 75})
+    # A la derecha de 0 la diferencia es 0,4. A la derecha de 1 llega a 0,5,
+    # justo en el último valor del baseline.
+    assert metrics(after, before)["ks"].score == 0.5
+    assert metrics(before, after)["ks"].score == 0.5
+
+
 @pytest.mark.parametrize("shift,expected", [(0.49, False), (0.5, True), (0.51, True)])
 def test_mean_threshold(shift, expected) -> None:
     result = metrics(pl.DataFrame({"x": [-1. + shift, 1. + shift] * 100}),
@@ -167,6 +177,26 @@ def test_type_changes_are_not_silently_coerced() -> None:
     assert result.changes[0].kind == "type_changed"
     assert len(result.drift) == 1
     assert "Tipos diferentes" in result.drift[0].reason
+
+
+def test_lazy_incompatible_and_date_columns_need_only_aggregates(monkeypatch) -> None:
+    from blink_data_lint.core import drift
+
+    current = pl.DataFrame({"amount": [1.] * 100, "^date$": [None] * 20 + [date(2026, 1, 1)] * 80})
+    previous = pl.DataFrame({"amount": ["1"] * 120, "^date$": [date(2026, 1, 1)] * 120})
+    expected = compare(current, previous)
+    collect = drift.collect
+    shapes = []
+
+    def collect_aggregate(query):
+        result = collect(query)
+        shapes.append(result.shape)
+        return result
+
+    monkeypatch.setattr(drift, "collect", collect_aggregate)
+    assert compare(current.lazy(), previous.lazy()) == expected
+    assert shapes == [(1, 1), (1, 1)]
+    assert expected.drift[1].score == 0.2 and expected.drift[1].flagged
 
 
 def test_extreme_and_precision_sensitive_values() -> None:

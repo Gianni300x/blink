@@ -4,7 +4,7 @@ import polars as pl
 
 from blink_data_lint.core.models import ComparisonReport, SchemaChange
 from blink_data_lint.core.drift import detect_drift
-from blink_data_lint.core.execution import collect
+from blink_data_lint.core.execution import count_rows
 from blink_data_lint.core.progress import ProgressCallback
 
 
@@ -21,9 +21,9 @@ def compare(current: pl.DataFrame | pl.LazyFrame, baseline: pl.DataFrame | pl.La
     for name, dtype in previous_schema.items():
         if name not in current_schema:
             changes.append(SchemaChange(name, "removed", str(dtype), None))
+    baseline_rows, current_rows = count_rows(baseline), count_rows(current)
     return ComparisonReport(
-        collect(baseline.select(pl.len())).item() if isinstance(baseline, pl.LazyFrame) else baseline.height,
-        collect(current.select(pl.len())).item() if isinstance(current, pl.LazyFrame) else current.height,
+        baseline_rows, current_rows,
         len(previous_schema), len(current_schema), tuple(changes),
-        detect_drift(current, baseline, progress=progress),
+        detect_drift(current, baseline, progress=progress, row_counts=(baseline_rows, current_rows)),
     )
