@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "blink-data-lint"
-version = "0.3.1"
+version = "0.3.2"
 description = "Zero-config, read-only data quality diagnostics for CSV, TSV, and Parquet."
 readme = "README.md"
 requires-python = ">=3.11"
