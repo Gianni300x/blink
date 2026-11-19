@@ -7,6 +7,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from blink_data_lint.core.detectors import AMBIGUOUS_COMMA_REASON
 from blink_data_lint.core.models import AnalysisReport, ComparisonReport
 from blink_data_lint.core.summary import summarize
 
@@ -38,7 +39,7 @@ def report_console(console: Console | None = None, *, stderr: bool = False) -> C
 def show_report(
     report: AnalysisReport, path: Path, *, format: str, policy: str,
     console: Console | None = None, comparison: ComparisonReport | None = None,
-    baseline: Path | None = None,
+    baseline: Path | None = None, decimal_comma: bool = False,
 ) -> None:
     output = report_console(console)
     totals = summarize(report, comparison)
@@ -71,6 +72,18 @@ def show_report(
         output.print(Text("Sin avisos en las reglas ejecutadas; revisá también la cobertura y las omisiones."))
     if comparison is not None:
         show_comparison(comparison, baseline, console=output, details=False)
+
+    if format in {"CSV", "TSV"} and not decimal_comma:
+        comma_columns = [
+            column for result in report.detectors if result.reason == AMBIGUOUS_COMMA_REASON
+            for column in result.columns
+        ]
+        if comma_columns:
+            hint = Text("\nPosible coma decimal en ", style="cyan")
+            hint.append(", ".join(comma_columns), style="bold")
+            hint.append(". Si son números con coma decimal y sin separadores de miles, "
+                        "repetí el comando con --decimal-comma.")
+            output.print(hint)
 
     review_columns = {f.column for f in warning_items
                       if f.code not in {"nulls", "nan", "all_null", "constant"}}

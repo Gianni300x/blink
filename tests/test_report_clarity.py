@@ -37,6 +37,24 @@ def test_actionable_findings_precede_metadata_and_information():
     assert text.count('Registro 100') == 1
 
 
+def test_regional_csv_shows_decimal_option_before_column_details(tmp_path, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "100")
+    path = tmp_path / "ventas regionales.csv"
+    lines = ["pedido;importe", *(f"{row};{row},25" for row in range(1, 21))]
+    path.write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8-sig"))
+    runner = CliRunner()
+
+    default = runner.invoke(app, [str(path), "--exit-code"])
+    assert default.exit_code == 0
+    summary = default.stdout.split("Salud básica por columna")[0]
+    assert "importe" in summary and "--decimal-comma" in summary
+    assert "sin separadores de miles" in " ".join(summary.split())
+
+    localized = runner.invoke(app, [str(path), "--decimal-comma"])
+    assert localized.exit_code == 0
+    assert "--decimal-comma" not in localized.stdout
+
+
 def test_baseline_only_warning_marks_global_header_and_appears_first():
     baseline=pl.DataFrame({'amount':range(100)})
     current=pl.DataFrame({'amount':range(50,150)})

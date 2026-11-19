@@ -108,7 +108,7 @@ def main(
         typer.echo(document)
     else:
         show_report(report, file, format=dataset.format, policy=dataset.policy,
-                    comparison=comparison, baseline=baseline)
+                    comparison=comparison, baseline=baseline, decimal_comma=decimal_comma)
     if result_code:
         raise typer.Exit(result_code)
 

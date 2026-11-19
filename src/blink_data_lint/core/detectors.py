@@ -58,6 +58,12 @@ def numeric_outliers(series: pl.Series, *, include_examples: bool = True) -> Det
     ))
 
 
+AMBIGUOUS_COMMA_REASON = (
+    "Posible coma decimal o separador de miles. La columna se conserva como texto. "
+    "Si contiene medidas, exportá con punto decimal y sin separador de miles."
+)
+
+
 def broken_type(series: pl.Series, *, include_examples: bool = True) -> DetectorResult:
     text = series.rename("value")
     values = text.drop_nulls().str.strip_chars()
@@ -83,11 +89,7 @@ def broken_type(series: pl.Series, *, include_examples: bool = True) -> Detector
     else:
         comma_numbers = values.str.contains(r"^[+-]?[0-9]+,[0-9]+$").sum()
         if comma_numbers and not leading_zero and (numeric_count + comma_numbers) / len(values) >= TYPE_RATIO:
-            return DetectorResult(
-                **base,
-                reason="Posible coma decimal o separador de miles. La columna se conserva como texto. "
-                       "Si contiene medidas, exportá con punto decimal y sin separador de miles.",
-            )
+            return DetectorResult(**base, reason=AMBIGUOUS_COMMA_REASON)
         reason = ("Posible código con ceros iniciales; conversión numérica omitida."
                   if leading_zero and numeric_count / len(values) >= TYPE_RATIO
                   else "Sin mayoría ≥90% numérica o de fechas ISO; no se adivina intención.")

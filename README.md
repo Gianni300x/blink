@@ -158,8 +158,8 @@ Para desactivar los colores en macOS/Linux: `NO_COLOR=1 blink datos.csv`.
   CRLF o CR. No se pueden mezclar saltos CR con LF o CRLF entre registros.
   Una estructura ambigua o inválida se rechaza. Para resolverla, exportá como
   UTF-8 con un único separador y campos entre comillas. Si Blink detecta números
-  con coma en texto, lo indica en el detalle del detector. Revisá la convención
-  del archivo antes de activar `--decimal-comma`.
+  con coma en texto, sugiere revisar la convención del archivo antes de activar
+  `--decimal-comma`. El motivo también figura en el detalle del detector.
   Las conversiones de codificación usan una copia
   temporal local UTF-8. Esa copia y el Parquet temporal de CSV grandes se
   eliminan al terminar; necesitan espacio libre en disco.
